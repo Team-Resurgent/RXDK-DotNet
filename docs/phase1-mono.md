@@ -112,6 +112,34 @@ in-source `#if HOST_WIN32`. The Win32 backend files already exist:
    loads + interprets it; **see managed output on the xemu serial UART** — the Phase-1 "hello,
    managed world" milestone.
 
+## Milestone 1 — status (2026-09-27): eglib compiling ✅
+
+`scripts/build-eglib.sh` compiles **24/28** eglib sources with the RXDK clang and archives
+`build-out/lib/libeglib.lib`. This proved the config + toolchain + compat approach:
+
+- **Config headers authored:** `build/generated/mono/config.h` (clang-gnu adaptation of
+  `winconfig.h`: `HOST_WIN32`+`TARGET_X86`+SGen, `DISABLE_JIT`, feature disables, sizes, `__thread`,
+  and a `__forceinline` define for the SDK's Windows headers) and
+  `build/generated/mono/eglib-config.h` (the `eglib-config.h.in` template resolved for i686 Win32).
+- **MSVCRT compat shims (new, in `pal/` + `build/generated/compat/`):** `win_crt_compat.h/.c`
+  (`_read`/`_write`/`_open`/`_close`/`_lseek`/`_unlink`/`_mktemp` → POSIX forwarders — RXDK libc has
+  the string/printf underscore names but not these file-IO ones), plus minimal `direct.h` and `io.h`
+  shims. TODO: upstream the file-IO names into RXDK-Libs `ms_crt_compat.c`.
+- **Compile flags that matter:** `-target i686-pc-windows-gnu -march=pentium3 -ffreestanding
+  -femulated-tls`, `-DHAVE_CONFIG_H`, force-include `config.h` + `win_crt_compat.h`, and
+  **`-fms-extensions -fms-compatibility`** — required for any TU that includes `windows.h`/`xtl.h`
+  (clears the `__forceinline`/`_inline` MSVC-keyword cascade from `d3d8.h`/`d3dx8math.inl`).
+- **Archive gotcha:** MSYS mangles `llvm-lib /OUT:`; the script uses `cygpath -w` +
+  `MSYS2_ARG_CONV_EXCL='*'`.
+
+**Deferred to milestone 1b** (win32 backends, not needed for interp bring-up): `gspawn`,
+`gdate-win32`, `gdir-win32` need a `winsock2.h` stub (sockets are disabled anyway); `gfile-win32`
+needs `_O_BINARY`/`_O_CREAT` defines + a wide-char decl fix. `gfile-win32` will be wanted once
+assembly file-loading is wired.
+
+**Next (milestone 2):** point the same recipe at `mono/utils` (HOST_WIN32 variants) — that's where
+the real PAL-vs-`libxapi` missing-symbol list first appears.
+
 ## First files to open
 
 `msvc/libmini.vcxproj` + `msvc/libmonoruntime.vcxproj` (source lists), `winconfig.h`,
