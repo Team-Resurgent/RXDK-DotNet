@@ -1,0 +1,4 @@
+[submodule "vendor/mono"]
+	path = vendor/mono
+	url = https://github.com/EqUiNoX-Labs/mono.git
+	branch = xbox

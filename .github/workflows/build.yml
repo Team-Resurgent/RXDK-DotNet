@@ -1,0 +1,156 @@
+name: Build RXDK-DotNet
+
+# Appropriated from RXDK-Tools (.github/workflows/build-rxdktools.yml): the multi-OS build
+# matrix and the tag / moving-"latest" / dispatch-prerelease release logic. Added here: the
+# isa-scan PIII gate (RXDK-Libs tools/isa-scan.py), a hard check that no native output uses an
+# instruction above the Pentium III (SSE1) baseline — the project's #1 risk (see docs/port-plan.md §4).
+#
+# NOTE: the runtime is not yet chosen (Mono vs NativeAOT — Phase 0 gate), so the compile/link/
+# package steps are TODO placeholders that succeed without producing artifacts. Fill them in once
+# the build system lands. The isa-gate and release jobs are real.
+
+on:
+  push:
+    branches: [main, master]
+    tags:
+      - 'v*'
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Create a GitHub Release with this tag (e.g. v1.0.0). Leave empty to build only.'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # --- Hard PIII/SSE1 instruction-set gate on any produced native object/lib -----------------
+  isa-gate:
+    name: ISA gate (PIII-clean)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Capstone
+        run: pip install capstone
+
+      # Scans every *.o / *.lib / *.a in build-out (Capstone ISA-group gate; exit 1 on any
+      # post-SSE1 opcode). No native output exists yet -> the gate is a no-op until the build
+      # lands, at which point it becomes the authoritative "won't fault on real HW" check.
+      - name: Run isa-scan over native output
+        run: |
+          set -euo pipefail
+          if [ -d build-out ]; then
+            python tools/isa-scan.py build-out
+          else
+            echo "No build-out/ yet — isa-scan gate is a no-op (see docs/port-plan.md §0/§4)."
+          fi
+
+  build:
+    name: Build (${{ matrix.os }})
+    needs: [isa-gate]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Host-side build driver (AOT compiler wrapper etc.) will be .NET, like RXDK-Tools.
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # TODO(Phase 0/1): resolve the RXDK LLVM toolchain (rxdk install-llvm / RXDK_LLVM) and the
+      # RXDK-SDK (.lib + headers), then build the PAL + runtime + example title into an .xbe.
+      - name: Build (placeholder)
+        shell: bash
+        run: |
+          echo "TODO: build PAL + runtime + example against RXDK-SDK once the runtime is chosen."
+          echo "See docs/port-plan.md §7 (decision gate) and §8 (phases)."
+
+      # TODO: upload the built .xbe / packaged bundle once it exists.
+      # - uses: actions/upload-artifact@v4
+      #   with: { name: rxdk-dotnet-${{ matrix.os }}, path: dist/**, if-no-files-found: error }
+
+  release:
+    name: GitHub Release
+    needs: [build]
+    if: |
+      github.event_name != 'pull_request' && (
+        startsWith(github.ref, 'refs/tags/v') ||
+        (github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '') ||
+        (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+        continue-on-error: true  # no artifacts yet during bring-up
+
+      - name: Resolve release tag
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          moving=false
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            tag="${GITHUB_REF#refs/tags/}"
+            prerelease=false
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.release_tag }}" ]]; then
+            tag="${{ github.event.inputs.release_tag }}"
+            prerelease=true
+          else
+            # Push to main: a single moving "latest" release so /releases/latest is always newest.
+            tag="latest"
+            prerelease=false
+            moving=true
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "moving=$moving" >> "$GITHUB_OUTPUT"
+          echo "Release tag: $tag (prerelease=$prerelease, moving=$moving)"
+
+      - name: Move the 'latest' tag/release to this build
+        if: steps.meta.outputs.moving == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release delete latest --repo "${{ github.repository }}" --cleanup-tag --yes || true
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: RXDK-DotNet ${{ steps.meta.outputs.tag }}
+          prerelease: ${{ steps.meta.outputs.prerelease }}
+          make_latest: ${{ steps.meta.outputs.prerelease == 'false' }}
+          generate_release_notes: true
+          files: |
+            dist/**/*

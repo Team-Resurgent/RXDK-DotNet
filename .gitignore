@@ -1,0 +1,21 @@
+# Build outputs
+/build-out/
+/dist/
+*.o
+*.obj
+*.lib
+*.a
+*.xbe
+*.iso
+
+# Python
+__pycache__/
+*.pyc
+
+# Editor / OS
+.vs/
+.vscode/
+.idea/
+*.user
+Thumbs.db
+.DS_Store
