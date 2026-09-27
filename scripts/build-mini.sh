@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# RXDK-DotNet — Phase-1 milestone 3: compile mono/sgen (GC) + mono/metadata (loader/type system)
-# for the Xbox. Same recipe/flags as milestones 1-2 (config.h + win32_supplement.h + compat shims,
-# HOST_WIN32 variants). Aggregated error reporting; archives libmonoruntime.lib from what compiles.
+# RXDK-DotNet — Phase-1 milestone 4: compile mono/mini + mono/mini/interp (JIT-driver, interpreter,
+# x86 arch layer) for the Xbox. Same recipe as milestones 1-3. Keeps x86 + common + windows + interp;
+# excludes every other arch, LLVM, the AOT compiler, and mini-windows-dllmain (DLL semantics we
+# replace with explicit init). Aggregated errors; archives libmini.lib.
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -12,14 +13,14 @@ MONO="$ROOT/vendor/mono"
 EGLIB="$MONO/mono/eglib"
 SDKI="/c/ProgramData/RXDK/sdk/include"
 PAL="$ROOT/pal/include"
-OUT="$ROOT/build-out/obj/metadata"
+OUT="$ROOT/build-out/obj/mini"
 mkdir -p "$OUT"
 
 FLAGS=(
   -target i686-pc-windows-gnu -march=pentium3 -c -O1 -g0
   -ffreestanding -fno-stack-protector -fno-sanitize=undefined -femulated-tls
   -fms-extensions
-  -DHAVE_CONFIG_H -DHAVE_SGEN_GC=1
+  -DHAVE_CONFIG_H
   -include "$GEN/config.h"
   -include "$PAL/rxdk/win32_supplement.h"
   -include "$PAL/rxdk/win_crt_compat.h"
@@ -27,18 +28,15 @@ FLAGS=(
   -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types
 )
 
-# Non-HOST_WIN32 platform variants + disabled subsystems (sockets, processes).
-EXCLUDE='console-unix|file-mmap-posix|w32error-unix|w32event-unix|w32file-unix|w32mutex-unix|w32semaphore-unix'
-EXCLUDE="$EXCLUDE|w32socket-unix|w32socket-win32|w32socket|w32process-unix-bsd|w32process-unix-default|w32process-unix-haiku|w32process-unix-osx|w32process-unix|w32process-win32|w32process"
-# disabled subsystems: COM (coree/cominterop/marshal-windows), socket threadpool-io, security, null console
-EXCLUDE="$EXCLUDE|coree|cominterop|marshal-windows|threadpool-io|threadpool-io-poll|mono-security-windows|console-null"
-# w32file-win32: blocked by an RXDK-SDK bug (winbase.h typedefs WIN32_FIND_DATA->A unconditionally,
-# ignoring UNICODE, and ships no WIN32_FIND_DATAW) -> find_first signature conflict. Deferred pending
-# an SDK fix (upstream) or a targeted shim; needed for Win32 file IO at milestone 4.
-EXCLUDE="$EXCLUDE|w32file-win32"
+# Keep x86 + common + windows + interp. Exclude other arches, LLVM, AOT-compiler, other platforms.
+EXCLUDE='(mini|tramp|exceptions)-(amd64|arm|arm64|mips|ppc|riscv|s390x|sparc|wasm|loongarch64)(-gsharedvt)?'
+EXCLUDE="$EXCLUDE|mini-llvm|llvmonly-runtime|aot-compiler|aot-runtime|aot-runtime-wasm|mini-posix|mini-darwin|mini-wasm-debugger|mini-windows-dllmain|whitebox"
+# embedded runtime: no mono.exe launcher (we write our own host), no socket soft-debugger, no
+# DAC/TLS-callback bootstrap (replaced by explicit init).
+EXCLUDE="$EXCLUDE|main|main-sgen|debugger-agent|mini-windows-dlldac|mini-windows-tls-callback"
 
 pass=0; fail=0; failed=()
-for f in "$MONO"/mono/sgen/*.c "$MONO"/mono/metadata/*.c; do
+for f in "$MONO"/mono/mini/*.c "$MONO"/mono/mini/interp/*.c; do
   b=$(basename "$f" .c)
   echo "$b" | grep -qE "^($EXCLUDE)$" && continue
   if "$CLANG" "${FLAGS[@]}" "$f" -o "$OUT/$b.o" 2> "$OUT/$b.err"; then
@@ -48,7 +46,7 @@ for f in "$MONO"/mono/sgen/*.c "$MONO"/mono/metadata/*.c; do
   fi
 done
 
-echo "===== sgen+metadata: $pass compiled, $fail failed ====="
+echo "===== mini+interp: $pass compiled, $fail failed ====="
 echo "-- distinct MISSING HEADERS --"
 for s in "${failed[@]}"; do cat "$OUT/$s.err"; done | grep -oE "fatal error: '[^']+' file not found" | sort | uniq -c | sort -rn
 echo "-- distinct FIRST non-header errors (top 30) --"
@@ -57,8 +55,8 @@ echo "-- failed files ($fail) --"; echo "${failed[*]}"
 
 if [ "$pass" -gt 0 ]; then
   LIB="$ROOT/build-out/lib"; mkdir -p "$LIB"
-  OUTW=$(cygpath -w "$LIB/libmonoruntime.lib")
+  OUTW=$(cygpath -w "$LIB/libmini.lib")
   objsw=(); for o in "$OUT"/*.o; do objsw+=("$(cygpath -w "$o")"); done
   MSYS2_ARG_CONV_EXCL='*' "$TC/bin/llvm-lib.exe" "/OUT:$OUTW" "${objsw[@]}" >/dev/null && \
-    echo "archived $pass objs -> build-out/lib/libmonoruntime.lib"
+    echo "archived $pass objs -> build-out/lib/libmini.lib"
 fi

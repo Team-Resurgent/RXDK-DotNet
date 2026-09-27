@@ -39,7 +39,9 @@
 #define DISABLED_FEATURES "jit,com,remoting,reflection_emit_save,processes,profiler,attach"
 
 /* ---- GC ------------------------------------------------------------------ */
-#define HAVE_SGEN_GC 1
+/* HAVE_SGEN_GC is passed as a compile FLAG (-DHAVE_SGEN_GC=1) to the utils/sgen/metadata batches,
+ * NOT defined here: mono/mini deliberately #errors if it sees the GC define (mini.h), so the same
+ * mini objects can link into either runtime. The SGen-derived defines below key off the flag. */
 #if defined(HAVE_SGEN_GC) && !defined(HAVE_CONC_GC_AS_DEFAULT)
 #define HAVE_CONC_GC_AS_DEFAULT 1
 #endif

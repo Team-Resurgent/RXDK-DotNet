@@ -196,9 +196,45 @@ the W struct). Needed for Win32 file IO at milestone 4.
 supplement declares (`SRWLOCK`/`CONDITION_VARIABLE` over `CRITICAL_SECTION`, `GlobalMemoryStatusEx`
 over `MmQueryStatistics`, `_beginthreadex` over `CreateThread`, `GetSystemInfo`, …).
 
-**Next (milestone 4):** `mono/mini` + `mono/mini/interp` — the JIT-driver/interpreter/arch layer.
-This is where the **SSE1 audit** of `mini-x86.c`/`tramp-x86.c`/`mono-context.c` lands (§4). After
-that: `win32_supplement.c` + the link into an embedding host + a bundled managed assembly.
+## Milestone 4 — status (2026-09-27): mini + interp compiling, SSE1 audit PASSED ✅
+
+`scripts/build-mini.sh` compiles **58/58** `mono/mini` + `mono/mini/interp` sources (0 failures) →
+`build-out/lib/libmini.lib`. **The entire Mono runtime engine now compiles for the Xbox** —
+eglib + utils + sgen + metadata + mini + interp, ~5.6 MB across four archives.
+
+**SSE1 codegen audit — the §4 concern — RESOLVED.** `python tools/isa-scan.py build-out/lib` is
+**clean: no instruction above SSE1** across all four archives, including the arch glue that
+interp-only doesn't insulate (`tramp-x86.o`, `mini-x86.o`, `mono-context.o`) and the interpreter
+(`transform.o`, `interp.o`). The core bet — that Mono on `-march=pentium3` clang stays PIII-safe —
+is now proven in emitted object code, not just at the source level.
+
+Key changes this milestone:
+- **`HAVE_SGEN_GC` moved from `config.h` to a per-batch `-D` flag** (utils/sgen/metadata get it;
+  eglib/mini do not). `mono/mini/mini.h` deliberately `#error`s if it sees the GC define, so the
+  same mini objects can link into either runtime.
+- **Generated header:** `cpu-x86.h` produced via `genmdesc.py TARGET_X86 … cpu-x86.md` (Mono's
+  machine-description compiler) into `build/generated/mono/`. Minimal `version.h` provided too.
+- **`win32_supplement.h`:** SEH filter constants (`EXCEPTION_CONTINUE_SEARCH`, …), DLL entry
+  reasons (`DLL_PROCESS_ATTACH`, …), `PIMAGE_TLS_CALLBACK`.
+- **Excluded** (embedded runtime / not our target): all non-x86 arches (amd64/arm/arm64/ppc/mips/
+  s390x/sparc/riscv/wasm/loongarch64), LLVM, the AOT compiler, `main`/`main-sgen` (the `mono.exe`
+  launcher — we write our own embedding host), `debugger-agent` (socket soft-debugger),
+  `mini-windows-dllmain`/`-dlldac`/`-tls-callback` (DllMain/DAC/TLS-callback → replaced by explicit init).
+
+## Phase-1 endgame (next)
+
+The compile phase is done. Remaining to a booting managed "hello":
+1. **`win32_supplement.c`** — implement the Vista-only primitives the supplement declares
+   (`SRWLOCK`/`CONDITION_VARIABLE` over `CRITICAL_SECTION`+events, `GlobalMemoryStatusEx` over
+   `MmQueryStatistics`, `GetSystemInfo`, `_beginthreadex` over `CreateThread`, …) + the MSVCRT
+   file-IO forwarders.
+2. **Link `libmono`** (the four archives) + `win32_supplement.o` + a tiny **embedding host**
+   (`mono_jit_init` / interp init → run a method) into an `.xbe` via the proven `hello-c` pipeline
+   (RXDK engine). Resolve the undefined-symbol tail against `libxapi`/`libc`.
+3. **Bundle a trivial managed assembly** (C# `Main` writing a line) into the ISO; interpret it;
+   **managed output on the xemu serial UART** — the Phase-1 payoff.
+4. Fold back the deferred files once their blockers clear: `w32file-win32` (RXDK-SDK
+   `WIN32_FIND_DATA`/UNICODE fix), `gfile-win32` (`_O_*` flags).
 
 ## First files to open
 

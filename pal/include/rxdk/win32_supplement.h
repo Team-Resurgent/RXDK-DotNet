@@ -106,6 +106,25 @@ typedef struct _NT_TIB {
 typedef struct _PROCESSOR_NUMBER { unsigned short Group; unsigned char Number; unsigned char Reserved; } PROCESSOR_NUMBER, *PPROCESSOR_NUMBER;
 #endif
 
+/* SEH filter return values (exceptions-x86.c) and DLL entry reasons (mini-windows.c). */
+#ifndef EXCEPTION_CONTINUE_SEARCH
+#define EXCEPTION_EXECUTE_HANDLER     1
+#define EXCEPTION_CONTINUE_SEARCH     0
+#define EXCEPTION_CONTINUE_EXECUTION (-1)
+#endif
+#ifndef DLL_PROCESS_ATTACH
+#define DLL_PROCESS_DETACH 0
+#define DLL_PROCESS_ATTACH 1
+#define DLL_THREAD_ATTACH  2
+#define DLL_THREAD_DETACH  3
+#endif
+
+/* PE TLS callback signature (referenced by the Windows thread-attach glue). */
+#ifndef RXDK_PIMAGE_TLS_CALLBACK_DEFINED
+#define RXDK_PIMAGE_TLS_CALLBACK_DEFINED
+typedef void (__stdcall *PIMAGE_TLS_CALLBACK)(void *DllHandle, unsigned long Reason, void *Reserved);
+#endif
+
 /* COM apartment-init flags — COM is disabled, but threads.c references these unconditionally. */
 #ifndef COINIT_APARTMENTTHREADED
 #define COINIT_MULTITHREADED      0x0
