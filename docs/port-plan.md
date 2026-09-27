@@ -336,8 +336,11 @@ revisit it if we ever want a truly xAPI-free build.) On-screen text can likewise
 2. **Wire the foundation:** add RXDK-SDK (or RXDK-Libs) + `picolibc` / `llvm-project` as pinned
    submodules; confirm RXDK-SDK already ships the `.lib`s + headers we link (it does —
    `D:\Git\RXDK-SDK\{lib,include}`, and `build-out/lib` in RXDK-Libs is populated).
-3. **Prove the title-link pipeline first, with C, not managed code:** resolve the RXDK LLVM
-   toolchain (`rxdk install-llvm` / `RXDK_LLVM`), build a trivial C `.xbe` against RXDK-SDK, boot
-   it (xemu + kit). This de-risks the IL→`.o`→lld→`imagebld` path before the runtime lands.
+3. ✅ **Title-link pipeline proven with C (2026-09-27).** `tests/hello-c` builds via the `rxdk`
+   engine (clang `i686-pc-windows-gnu -march=pentium3` → lld `-e XapiTitleStartup` → `imagebld`
+   XBE → `xdvdfs` ISO) and **boots on xemu**, printing over the LPC47M157 UART
+   (`xemu -dvd_path <iso> -device lpc47m157 -serial stdio`). Toolchain staged at
+   `C:\ProgramData\RXDK\{llvm,sdk,tools}`; xemu-devkit at `D:\Git\xemu-devkit`. The
+   `IL→.o→lld→imagebld` path is de-risked.
 4. Run the **two Phase-0 spikes** (Mono x87 codegen; NativeAOT ISA hits); isa-scan both.
 5. Write `docs/decision-runtime.md` and pass the §7 gate.

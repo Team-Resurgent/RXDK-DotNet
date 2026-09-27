@@ -1,0 +1,37 @@
+{
+  "name": "RxdkDotNetHelloC",
+  "defaultConfiguration": "Debug",
+  "configurations": {
+    "Debug": {
+      "configuration": "debug",
+      "sources": [
+        "main.c"
+      ],
+      "libraries": [
+        "libxbdmd.lib",
+        "libxapid.lib",
+        "libkerneld.lib",
+        "libcd.lib",
+        "libcppd.lib",
+        "libcompatd.lib"
+      ],
+      "defines": [],
+      "createIso": true,
+      "forceCopy": false,
+      "imageBuild": {
+        "stackSize": 65536,
+        "debug": true,
+        "noLogo": true,
+        "noLibWarn": true,
+        "limitMemory": false,
+        "dontModifyHardDisk": false,
+        "dontMountUtilityDrive": true,
+        "formatUtilityDrive": false,
+        "testId": "0xffff0001",
+        "testName": "RxdkDotNetHelloC",
+        "testVersion": "4096"
+      },
+      "outputDir": "out/Debug"
+    }
+  }
+}

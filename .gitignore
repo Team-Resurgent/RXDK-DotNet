@@ -1,6 +1,9 @@
 # Build outputs
 /build-out/
 /dist/
+out/
+bin/
+obj/
 *.o
 *.obj
 *.lib
