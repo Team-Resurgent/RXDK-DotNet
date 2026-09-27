@@ -227,7 +227,8 @@ Gate criteria:
   against `libkernel` + `libc`.
 - **Exit:** the §7 decision, recorded in `docs/decision-runtime.md`.
 
-**Phase 1 — Boot a managed entrypoint (no GC, no threads).**
+**Phase 1 — Boot a managed entrypoint (no GC, no threads).** → detailed build plan in
+[`phase1-mono.md`](phase1-mono.md) (source subset, config header, PAL-over-libxapi, milestone ladder).
 - Minimal runtime init on the `PsCreateSystemThreadEx` main thread (mirror RXDK's EH thread
   rule); PAL memory + debug-print wired.
 - Execute one AOT'd (or JIT'd) static method that calls `DbgPrint` via P/Invoke → "hello from
