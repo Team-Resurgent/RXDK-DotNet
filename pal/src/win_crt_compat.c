@@ -42,5 +42,7 @@ int _unlink(const char *path)
 
 char *_mktemp(char *template_)
 {
-    return mktemp(template_);
+    /* picolibc doesn't provide mktemp; bring-up stub returns the template unchanged. Revisit if a
+     * Mono path actually depends on a unique temp name. */
+    return template_;
 }

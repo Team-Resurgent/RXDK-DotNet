@@ -17,8 +17,11 @@
 #endif
 /* Likewise MSVC's `_inline` (used in d3dx8math.inl). We build with -fms-extensions (which keeps
  * __GNUC__ defined, unlike -fms-compatibility) so these two keyword spellings need mapping. */
+/* MSVC's `_inline` means internal inline. Map to `static __inline` so the SDK's d3dx8math.inl
+ * helpers get internal linkage — otherwise each TU that includes <xtl.h> emits them as external
+ * symbols and multiple such objects collide at link (duplicate symbol). */
 #ifndef _inline
-#define _inline __inline
+#define _inline static __inline
 #endif
 
 /* ---- VES / codegen ------------------------------------------------------- */

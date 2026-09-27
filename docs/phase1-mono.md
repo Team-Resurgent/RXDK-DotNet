@@ -221,9 +221,24 @@ Key changes this milestone:
   launcher — we write our own embedding host), `debugger-agent` (socket soft-debugger),
   `mini-windows-dllmain`/`-dlldac`/`-tls-callback` (DllMain/DAC/TLS-callback → replaced by explicit init).
 
-## Phase-1 endgame (next)
+## Phase-1 endgame — status (2026-09-27): PAL glue written, link surface enumerated
 
-The compile phase is done. Remaining to a booting managed "hello":
+`win32_supplement.c` (the Vista-primitive emulation) + `win_crt_compat.c` compile, and the trial
+link of all four archives + PAL + a minimal embedding host against RXDK-SDK enumerates the full
+remaining surface: **276 undefined symbols, all external or from deliberately-excluded files** —
+no missing inter-archive symbols, i.e. the compile phase is coherent. Full categorized breakdown +
+resolution plan in [`phase1-link-surface.md`](phase1-link-surface.md). Headlines: Win32 wide-variant
+thunks + Interlocked64 (PAL), `mini_llvmonly_*`/`mono_aot_*`/unused-icall stubs, un-defer the eglib
+win32 file/dir files, a minimal zlib — then **corlib** (the managed BCL) is the runtime gate to
+actually executing a method.
+
+Config fix this stage: `_inline` → `static __inline` (the SDK's `d3dx8math.inl` helpers must have
+internal linkage), and the link uses `--allow-multiple-definition` for the residual `__forceinline`
+header inlines (dead D3DX code).
+
+## Phase-1 endgame (remaining)
+
+The compile phase is done; the link surface is known. Remaining to a booting managed "hello":
 1. **`win32_supplement.c`** — implement the Vista-only primitives the supplement declares
    (`SRWLOCK`/`CONDITION_VARIABLE` over `CRITICAL_SECTION`+events, `GlobalMemoryStatusEx` over
    `MmQueryStatistics`, `GetSystemInfo`, `_beginthreadex` over `CreateThread`, …) + the MSVCRT
