@@ -97,7 +97,7 @@
 #define HAVE_WCHAR_H 1
 
 /* ---- package identity ---------------------------------------------------- */
-#define MONO_CORLIB_VERSION "1A5E-RXDK-PLACEHOLDER"  /* TODO: real corlib-interface version */
+#define MONO_CORLIB_VERSION "1A5E0066-58DC-428A-B21C-0AD6CDAE2789"  /* mono 6.13 (configure.ac) */
 #define PACKAGE "mono"
 #define PACKAGE_NAME "mono"
 #define PACKAGE_STRING "mono 6.13.0"
