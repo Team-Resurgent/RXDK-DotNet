@@ -42,3 +42,25 @@ undefined symbols** — the true remaining PAL/runtime surface. It groups cleanl
    library (`mscorlib`/`System.Private.CoreLib` equivalent — mono's `mcs/class/corlib`) present at
    boot or `mono_jit_init` fails. Building/trimming corlib for the target is its own milestone
    (Phase 1b) and is the gate to actually *running* a managed method.
+
+## Result (2026-09-27): 0 undefined → the runtime LINKS, BOOTS, and RUNS Mono init
+
+The 276 symbols resolved to **0** — `mono-host.exe` (~3.3 MB PE) links, `imagebld` → `.xbe`,
+`xdvdfs` → `.iso`. **Booted on xemu, and Mono's own runtime code executes on real-Xbox HLE:**
+
+```
+RXDK.start: main
+RXDK-DotNet: mono embedding host starting     <- our embedding host
+DECL_OFFSET2(CallContext,stack,20) ...        <- Mono runtime executing (mini-cross-helpers)
+#endif //disable jit check
+lldb support has been disabled at configure time.
+```
+
+So the linked runtime boots and runs Mono init far past "it links". It then stops inside
+`mono_jit_init` — it takes the **cross-offsets dump path** (`mini-cross-helpers.c`), which suggests
+`MONO_CROSS_COMPILE` is effectively engaged, and corlib is absent. Two next items:
+1. **Fix the offsets-dump path** — ensure the target runtime build doesn't take the cross-compiler
+   offsets branch in `mini_init` (config/`MONO_CROSS_COMPILE`).
+2. **corlib (Phase 1b)** — the managed BCL so `mono_jit_init` completes and a method can run.
+
+`scripts/build-host.sh` now also packages the XBE + ISO, so the bootable image is reproducible.

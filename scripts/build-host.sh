@@ -53,3 +53,13 @@ grep -oE 'undefined symbol: [^ ]+' "$OUT/link.err" | sed 's/undefined symbol: //
 wc -l < "$OUT/undef.txt"
 echo "-- sample (first 60) --"; head -60 "$OUT/undef.txt"
 echo "-- other link errors (non-undefined) --"; grep -v 'undefined symbol' "$OUT/link.err" | grep -iE 'error|warning' | head -10
+
+# ---- package the linked PE into a bootable XBE + ISO (RXDK tools) --------------------------------
+if [ -f "$OUT/mono-host.exe" ]; then
+  T=/c/ProgramData/RXDK/tools
+  MSYS2_ARG_CONV_EXCL='*' "$T/imagebld.exe" "/in:$(W "$OUT/mono-host.exe")" "/out:$(W "$OUT/mono-host.xbe")" \
+    /nologo /stack:262144 /debug /nolibwarn /dontmountud /TESTID:0xffff0002 /TESTNAME:RxdkMonoHost /TESTVERSION:4096 >/dev/null 2>&1
+  mkdir -p "$OUT/iso/RxdkMonoHost"; cp "$OUT/mono-host.xbe" "$OUT/iso/RxdkMonoHost/default.xbe"
+  MSYS2_ARG_CONV_EXCL='*' "$T/xdvdfs.exe" pack "$(W "$OUT/iso/RxdkMonoHost")" "$(W "$OUT/RxdkMonoHost.iso")" >/dev/null 2>&1
+  echo "packaged -> build-out/obj/host/RxdkMonoHost.iso  (boot: xemu -dvd_path <iso> -device lpc47m157 -serial stdio)"
+fi
