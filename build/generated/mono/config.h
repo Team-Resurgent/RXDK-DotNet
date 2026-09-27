@@ -19,6 +19,7 @@
 /* ---- VES / codegen ------------------------------------------------------- */
 #define ENABLE_ILGEN 1          /* required whenever the interpreter is enabled */
 #define DISABLE_JIT 1           /* interpreter-first bring-up (port-plan.md §4) */
+#define USE_GCC_ATOMIC_OPS 1    /* clang/gcc __sync_* — selects the gcc path in mono-membar.h etc. */
 /* Leave DISABLE_INTERPRETER UNSET so the interp EE is compiled in. */
 
 /* ---- disabled subsystems (freestanding console; see phase1-mono.md) ------ */

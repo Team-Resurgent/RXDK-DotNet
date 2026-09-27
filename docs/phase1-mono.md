@@ -137,8 +137,35 @@ in-source `#if HOST_WIN32`. The Win32 backend files already exist:
 needs `_O_BINARY`/`_O_CREAT` defines + a wide-char decl fix. `gfile-win32` will be wanted once
 assembly file-loading is wired.
 
-**Next (milestone 2):** point the same recipe at `mono/utils` (HOST_WIN32 variants) — that's where
-the real PAL-vs-`libxapi` missing-symbol list first appears.
+## Milestone 2 — status (2026-09-27): mono/utils compiling ✅
+
+`scripts/build-utils.sh` compiles **77/77 relevant `mono/utils` sources** (0 failures) and archives
+`build-out/lib/libmonoutils.lib`. **This validates the core PAL strategy:** every gap was a missing
+Win32 *type/constant*, never a missing OS *function* — Mono's threading/mmap/sync/TLS APIs all
+resolve against RXDK-SDK's `libxapi`. The Win2000-era Xbox surface just lacks the modern (Vista+)
+Win32 declarations Mono 6.13 assumes.
+
+- **`USE_GCC_ATOMIC_OPS`** added to `config.h` → `mono-membar.h` uses `__sync_synchronize()`.
+- **`pal/include/rxdk/win32_supplement.h`** (new, force-included): the Win32 types/constants the SDK
+  omits — `LONG64`/`UINT64`, `SRWLOCK`, `CONDITION_VARIABLE`, `SYSTEM_INFO`+`GetSystemInfo`,
+  `MEMORYSTATUSEX`+`GlobalMemoryStatusEx`, `NT_TIB`, `PROCESSOR_NUMBER`, `WSAEVENT`,
+  `TLS_MINIMUM_AVAILABLE`, `DUPLICATE_SAME_ACCESS`, `MAXIMUM_WAIT_OBJECTS`,
+  `HEAP_CREATE_ENABLE_EXECUTE`, `CRITICAL_SECTION_NO_DEBUG_INFO`, `MEMORY_ALLOCATION_ALIGNMENT`.
+- **Header shims:** `winsock2.h` (defensive include → pulls the supplement), `process.h`
+  (`_beginthreadex`), `psapi.h` (`GetProcessMemoryInfo`).
+- **Excluded** (not our target / disabled subsystems): non-x86 hwcap (arm/riscv/s390x/sparc),
+  other-platform threads (mach/wasm/posix-signals), networking, processes/psapi (proclib),
+  bcrypt-rand, dlmalloc, dynamic-loading (mono-dl), io-portability.
+
+**Owed to link time — `win32_supplement.c` (TODO, the real PAL emulation):** the supplement only
+*declares* the Vista-only primitives; they need definitions over what the Xbox provides —
+`SRWLOCK`/`CONDITION_VARIABLE` over `CRITICAL_SECTION`+events, `GlobalMemoryStatusEx` over
+`MmQueryStatistics`, `GetSystemInfo` over the kernel, `_beginthreadex` over `CreateThread`. These
+are the genuine PAL shims (small). Compilation doesn't need them; the eventual runtime link does.
+
+**Next (milestone 3):** `mono/sgen` (GC) + `mono/metadata` (loader/type-system) — the bulk — then
+`mono/mini` + `mono/mini/interp`. Watch item: the SSE1 audit of `mini-x86.c`/`tramp-x86.c`/
+`mono-context.c` (arch glue), per §4.
 
 ## First files to open
 
