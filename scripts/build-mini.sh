@@ -30,7 +30,10 @@ FLAGS=(
 
 # Keep x86 + common + windows + interp. Exclude other arches, LLVM, AOT-compiler, other platforms.
 EXCLUDE='(mini|tramp|exceptions)-(amd64|arm|arm64|mips|ppc|riscv|s390x|sparc|wasm|loongarch64)(-gsharedvt)?'
-EXCLUDE="$EXCLUDE|mini-llvm|llvmonly-runtime|aot-compiler|aot-runtime|aot-runtime-wasm|mini-posix|mini-darwin|mini-wasm-debugger|mini-windows-dllmain|whitebox"
+# Keep aot-runtime + llvmonly-runtime IN: under DISABLE_AOT / !ENABLE_LLVM they provide the no-op
+# mono_aot_* / mini_llvmonly_* definitions the interp path references. Only the AOT *compiler* and
+# the real LLVM backend stay out.
+EXCLUDE="$EXCLUDE|mini-llvm|aot-compiler|aot-runtime-wasm|mini-posix|mini-darwin|mini-wasm-debugger|mini-windows-dllmain|whitebox"
 # embedded runtime: no mono.exe launcher (we write our own host), no socket soft-debugger, no
 # DAC/TLS-callback bootstrap (replaced by explicit init).
 EXCLUDE="$EXCLUDE|main|main-sgen|debugger-agent|mini-windows-dlldac|mini-windows-tls-callback"

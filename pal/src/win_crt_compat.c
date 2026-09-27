@@ -46,3 +46,33 @@ char *_mktemp(char *template_)
      * Mono path actually depends on a unique temp name. */
     return template_;
 }
+
+/* ---- endgame link-surface: MSVCRT names Mono uses that picolibc lacks ------------------------ */
+#include <time.h>
+#include "rxdk/win32_supplement.h"   /* struct _timeb */
+
+int _access(const char *path, int mode) { return access(path, mode); }
+int _fileno(FILE *stream)               { return fileno(stream); }
+
+void _ftime(struct _timeb *tb)
+{
+    if (!tb) return;
+    tb->time = time(NULL); tb->millitm = 0; tb->timezone = 0; tb->dstflag = 0;
+}
+
+int  _wmkdir(const unsigned short *path) { (void)path; return -1; }   /* no wide mkdir on Xbox */
+int  utime(const char *path, const void *times) { (void)path; (void)times; return 0; }
+
+int _ecvt_s(char *buf, unsigned long sz, double value, int ndigits, int *dec, int *sign)
+{
+    (void)buf; (void)sz; (void)value; (void)ndigits;
+    if (dec) *dec = 0;
+    if (sign) *sign = 0;
+    return 0;   /* unused float-formatting path */
+}
+
+/* Write a dword through the FS segment (SEH/TEB slot writes). */
+void __writefsdword(unsigned long offset, unsigned long value)
+{
+    __asm__ __volatile__("movl %0, %%fs:(%1)" : : "r"(value), "r"(offset) : "memory");
+}

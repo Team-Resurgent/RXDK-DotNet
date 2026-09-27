@@ -123,3 +123,85 @@ unsigned long _beginthreadex(void *security, unsigned stack_size,
     return (unsigned long)h;
 }
 void _endthreadex(unsigned retval) { ExitThread((DWORD)retval); }
+
+/* ================================================================================================
+ * Endgame link-surface: Win32 APIs the Windows-2000-era SDK omits that Mono references. Referenced
+ * cdecl (undecorated) unless a @N stdcall decoration is noted. Simplified signatures are fine for
+ * cdecl (caller cleans the stack); the @N ones must match arg-byte counts exactly.
+ * ============================================================================================== */
+
+/* ---- 64-bit / pointer Interlocked (over __sync; libxapi has 32-bit only) --------------------- */
+long long InterlockedIncrement64(long long volatile *p)          { return __sync_add_and_fetch(p, 1); }
+long long InterlockedDecrement64(long long volatile *p)          { return __sync_sub_and_fetch(p, 1); }
+long long InterlockedAdd64(long long volatile *p, long long v)   { return __sync_add_and_fetch(p, v); }
+long      InterlockedAdd(long volatile *p, long v)               { return __sync_add_and_fetch(p, v); }
+long long InterlockedExchange64(long long volatile *p, long long v) { return __sync_lock_test_and_set(p, v); }
+long long InterlockedCompareExchange64(long long volatile *p, long long ex, long long comp)
+                                                                 { return __sync_val_compare_and_swap(p, comp, ex); }
+void *InterlockedExchangePointer(void *volatile *p, void *v)     { return __sync_lock_test_and_set(p, v); }
+void *InterlockedCompareExchangePointer(void *volatile *p, void *ex, void *comp)
+                                                                 { return __sync_val_compare_and_swap(p, comp, ex); }
+
+/* ---- wide (W) synchronization APIs -> the SDK's ANSI variants (wide names ignored) ------------ */
+HANDLE CreateEventW(void *sa, int manual, int initial, const unsigned short *name)
+{ (void)name; return CreateEventA((LPSECURITY_ATTRIBUTES)sa, manual, initial, NULL); }
+HANDLE CreateMutexW(void *sa, int owner, const unsigned short *name)
+{ (void)name; return CreateMutexA((LPSECURITY_ATTRIBUTES)sa, owner, NULL); }
+HANDLE OpenEventW(unsigned long access, int inherit, const unsigned short *name)     { (void)access;(void)inherit;(void)name; return NULL; }
+HANDLE OpenMutexW(unsigned long access, int inherit, const unsigned short *name)     { (void)access;(void)inherit;(void)name; return NULL; }
+HANDLE OpenSemaphoreW(unsigned long access, int inherit, const unsigned short *name) { (void)access;(void)inherit;(void)name; return NULL; }
+HANDLE OpenThread(unsigned long access, int inherit, unsigned long tid)              { (void)access;(void)inherit;(void)tid; return NULL; }
+
+/* ---- SRW try-acquire + CS-Ex ----------------------------------------------------------------- */
+int InitializeCriticalSectionEx(void *cs, unsigned long spin, unsigned long flags)
+{ (void)spin;(void)flags; InitializeCriticalSection((CRITICAL_SECTION *)cs); return 1; }
+int TryAcquireSRWLockExclusive(PSRWLOCK lock) { return TryEnterCriticalSection(srw_cs(lock)); }
+
+/* ---- dynamic loading: unsupported on Xbox (static P/Invoke) ----------------------------------- */
+void *LoadLibrary(const char *n)   { (void)n; return NULL; }
+void *LoadLibraryW(const unsigned short *n) { (void)n; return NULL; }
+void *GetProcAddress(void *m, const char *n) { (void)m;(void)n; return NULL; }
+int   FreeLibrary(void *m)         { (void)m; return 1; }
+void *__stdcall LoadLibraryExW(const unsigned short *n, void *h, unsigned long f) /* @12 */
+{ (void)n;(void)h;(void)f; return NULL; }
+void *__stdcall MonoLoadImage(const unsigned short *n) { (void)n; return NULL; } /* @4 */
+void *coree_module_handle = NULL;   /* DATA symbol (coree.h extern) */
+
+/* ---- environment: Xbox has none -------------------------------------------------------------- */
+unsigned long GetEnvironmentVariableW(const unsigned short *n, unsigned short *buf, unsigned long sz)
+{ (void)n;(void)buf;(void)sz; return 0; }
+int  SetEnvironmentVariableW(const unsigned short *n, const unsigned short *v) { (void)n;(void)v; return 1; }
+void *GetEnvironmentStrings(void) { return NULL; }
+int  FreeEnvironmentStrings(void *p) { (void)p; return 1; }
+
+/* ---- COM: disabled --------------------------------------------------------------------------- */
+long CoInitializeEx(void *reserved, unsigned long model) { (void)reserved;(void)model; return 0; }
+void CoUninitialize(void) {}
+
+/* ---- vectored exception handlers: unused ----------------------------------------------------- */
+void *AddVectoredExceptionHandler(unsigned long first, void *handler) { (void)first;(void)handler; return NULL; }
+unsigned long RemoveVectoredExceptionHandler(void *h) { (void)h; return 0; }
+
+/* ---- misc ------------------------------------------------------------------------------------ */
+extern volatile unsigned long KeTickCount;   /* xboxkrnl export: ms-ish ticks since boot */
+unsigned long long __stdcall GetTickCount64(void) { return (unsigned long long)KeTickCount; } /* @0 */
+/* NOTE: GetTickCount + Sleep are declared __declspec(dllimport) by winbase.h, so they can't be
+ * defined in a TU that includes <xtl.h>. Mono references them undecorated (cdecl); they're defined
+ * in the headerless win_cdecl_shims.c instead. */
+void FlushProcessWriteBuffers(void) {}
+void GetCurrentProcessorNumberEx(void *procnum) { if (procnum) { unsigned short *p = (unsigned short*)procnum; p[0]=0; p[1]=0; } }
+int  IsWow64Process(void *proc, int *result) { (void)proc; if (result) *result = 0; return 1; }
+void *NtCurrentProcess(void) { return (void *)(unsigned long)-1; }
+void *NtCurrentTeb(void) { void *teb; __asm__ __volatile__("movl %%fs:0x18, %0" : "=r"(teb)); return teb; }
+int  GetThreadContext(void *thread, void *ctx) { (void)thread;(void)ctx; return 0; }
+int  WSAWaitForMultipleEvents(unsigned long n, const void *ev, int all, unsigned long ms, int alertable)
+{ (void)n;(void)ev;(void)all;(void)ms;(void)alertable; return (int)0xFFFFFFFF; /* WSA_WAIT_FAILED */ }
+
+int GetVersionExW(void *info)
+{
+    OSVERSIONINFOEXW *o = (OSVERSIONINFOEXW *)info;   /* first fields match OSVERSIONINFOW */
+    if (!o) return 0;
+    o->dwMajorVersion = 5; o->dwMinorVersion = 1; o->dwBuildNumber = 2600; o->dwPlatformId = 2;
+    return 1;
+}
+
