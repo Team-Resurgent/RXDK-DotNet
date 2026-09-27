@@ -52,8 +52,14 @@ work is the middle: turn IL + the Mono-for-Xbox runtime into something that engi
 
 ## What we prebuild and ship (so users don't)
 
-- **Mono-for-Xbox runtime + PAL** — a prebuilt package (the way RXDK-SDK ships `.lib`s), so
-  users never build mono. Pinned, versioned, downloaded on first use.
+- **Mono-for-Xbox runtime + PAL** — a prebuilt `libmono` package (the way RXDK-SDK ships
+  `.lib`s), so users never build mono. Pinned, versioned, downloaded on first use.
+  **Build/release infra (mirrors the LLVM model):** `Team-Resurgent/mono` has an orphan,
+  CI-only **`teamresurgent`** branch (no mono source) whose workflow cross-builds the **`xbox`**
+  branch and publishes `libmono` as a rolling GitHub release; RXDK-DotNet consumes that release.
+  Exactly how `Team-Resurgent/llvm-project`'s `teamresurgent` branch builds its `xbox` branch and
+  releases the clang toolchain. The workflow's build steps are filled in once the Phase-1 recipe
+  (`phase1-mono.md`) is proven locally, so CI encodes a known-good build rather than a guess.
 - **RXDK LLVM toolchain** — already released as per-host zips (win/linux/macOS × x64/arm64) and
   auto-installed via `rxdk install-llvm`. Reuse verbatim.
 - **RXDK-SDK** (`libxapi`/`libd3d8`/… + headers) — already staged via `rxdk install-sdk`.
