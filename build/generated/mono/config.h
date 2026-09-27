@@ -15,6 +15,11 @@
 #ifndef __forceinline
 #define __forceinline __inline__ __attribute__((__always_inline__))
 #endif
+/* Likewise MSVC's `_inline` (used in d3dx8math.inl). We build with -fms-extensions (which keeps
+ * __GNUC__ defined, unlike -fms-compatibility) so these two keyword spellings need mapping. */
+#ifndef _inline
+#define _inline __inline
+#endif
 
 /* ---- VES / codegen ------------------------------------------------------- */
 #define ENABLE_ILGEN 1          /* required whenever the interpreter is enabled */
@@ -47,6 +52,9 @@
 
 /* ---- host / target ------------------------------------------------------- */
 #define HOST_WIN32 1
+#define USE_WINDOWS_BACKEND 1   /* Mono's Windows thread backend (adds windows_tib to MonoThreadInfo) */
+#define UNICODE 1               /* Mono is a Unicode build on Windows: generic Win32 A/W macros -> W */
+#define _UNICODE 1
 #define TARGET_WIN32 1
 #define TARGET_X86 1
 #define HOST_X86 1

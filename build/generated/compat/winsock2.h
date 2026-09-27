@@ -6,4 +6,5 @@
 #ifndef RXDK_COMPAT_WINSOCK2_H
 #define RXDK_COMPAT_WINSOCK2_H
 #include <rxdk/win32_supplement.h>
+#include <sys/_timeval.h>   /* struct timeval — Mono includes winsock2.h expecting it (threads.c) */
 #endif

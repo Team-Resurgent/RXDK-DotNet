@@ -14,8 +14,37 @@
 #ifndef RXDK_WIN32_SUPPLEMENT_H
 #define RXDK_WIN32_SUPPLEMENT_H
 
+#include <time.h>   /* time_t for the MSVCRT time structs below */
+
 #ifdef __cplusplus
 extern "C" {
+#endif
+
+/* MSVCRT time structs the SDK forward-declares but doesn't define. */
+#ifndef RXDK__TIMEB_DEFINED
+#define RXDK__TIMEB_DEFINED
+struct _timeb { time_t time; unsigned short millitm; short timezone; short dstflag; };
+#endif
+#ifndef RXDK_UTIMBUF_DEFINED
+#define RXDK_UTIMBUF_DEFINED
+struct utimbuf { time_t actime; time_t modtime; };
+#endif
+
+/* OSVERSIONINFO (non-EX), ANSI + generic alias (GetVersionEx). */
+#ifndef RXDK_OSVERSIONINFO_DEFINED
+#define RXDK_OSVERSIONINFO_DEFINED
+typedef struct _OSVERSIONINFOA {
+    unsigned long dwOSVersionInfoSize, dwMajorVersion, dwMinorVersion, dwBuildNumber, dwPlatformId;
+    char          szCSDVersion[128];
+} OSVERSIONINFOA, *POSVERSIONINFOA, *LPOSVERSIONINFOA;
+#ifndef OSVERSIONINFO
+#define OSVERSIONINFO OSVERSIONINFOA
+#endif
+#endif
+
+/* ReplaceFile flag (w32file). */
+#ifndef REPLACEFILE_IGNORE_MERGE_ERRORS
+#define REPLACEFILE_IGNORE_MERGE_ERRORS 0x00000002
 #endif
 
 /* 64-bit integer aliases used by atomic.h's Interlocked64 wrappers. */
@@ -77,10 +106,22 @@ typedef struct _NT_TIB {
 typedef struct _PROCESSOR_NUMBER { unsigned short Group; unsigned char Number; unsigned char Reserved; } PROCESSOR_NUMBER, *PPROCESSOR_NUMBER;
 #endif
 
-/* Winsock event handle — sockets are disabled; only appears in signatures. */
+/* COM apartment-init flags — COM is disabled, but threads.c references these unconditionally. */
+#ifndef COINIT_APARTMENTTHREADED
+#define COINIT_MULTITHREADED      0x0
+#define COINIT_APARTMENTTHREADED  0x2
+#define COINIT_DISABLE_OLE1DDE    0x4
+#define COINIT_SPEED_OVER_MEMORY  0x8
+#endif
+
+/* Winsock types — sockets are disabled; these only appear in icall-table.h signatures. */
 #ifndef RXDK_WSAEVENT_DEFINED
 #define RXDK_WSAEVENT_DEFINED
 typedef void *WSAEVENT;
+#endif
+#ifndef RXDK_WSABUF_DEFINED
+#define RXDK_WSABUF_DEFINED
+typedef struct _WSABUF { unsigned long len; char *buf; } WSABUF, *LPWSABUF;
 #endif
 
 /* Slim Reader/Writer lock — Vista+; absent on Win2000/Xbox. Emulated over a CRITICAL_SECTION
@@ -108,6 +149,94 @@ int  __stdcall SleepConditionVariableCS(PCONDITION_VARIABLE, void *lpCriticalSec
 int  __stdcall SleepConditionVariableSRW(PCONDITION_VARIABLE, PSRWLOCK, unsigned long dwMilliseconds, unsigned long Flags);
 void __stdcall WakeConditionVariable(PCONDITION_VARIABLE);
 void __stdcall WakeAllConditionVariable(PCONDITION_VARIABLE);
+#endif
+
+/* File attribute / file type constants the SDK omits (w32file, console). */
+#ifndef FILE_ATTRIBUTE_ENCRYPTED
+#define FILE_ATTRIBUTE_ENCRYPTED       0x00004000
+#endif
+#ifndef FILE_ATTRIBUTE_REPARSE_POINT
+#define FILE_ATTRIBUTE_REPARSE_POINT   0x00000400
+#endif
+#ifndef FILE_ATTRIBUTE_SPARSE_FILE
+#define FILE_ATTRIBUTE_SPARSE_FILE     0x00000200
+#endif
+#ifndef FILE_ATTRIBUTE_NOT_CONTENT_INDEXED
+#define FILE_ATTRIBUTE_NOT_CONTENT_INDEXED 0x00002000
+#endif
+#ifndef FILE_TYPE_CHAR
+#define FILE_TYPE_UNKNOWN 0x0000
+#define FILE_TYPE_DISK    0x0001
+#define FILE_TYPE_CHAR    0x0002
+#define FILE_TYPE_PIPE    0x0003
+#endif
+
+/* WIN32_FIND_DATA (FindFirstFile) — self-contained (ft* as low/high DWORD pairs to avoid depending
+ * on FILETIME's definition order). */
+#ifndef RXDK_WIN32_FIND_DATA_DEFINED
+#define RXDK_WIN32_FIND_DATA_DEFINED
+typedef struct _RXDK_FILETIME { unsigned long dwLowDateTime; unsigned long dwHighDateTime; } RXDK_FILETIME;
+typedef struct _WIN32_FIND_DATAW {
+    unsigned long  dwFileAttributes;
+    RXDK_FILETIME  ftCreationTime, ftLastAccessTime, ftLastWriteTime;
+    unsigned long  nFileSizeHigh, nFileSizeLow;
+    unsigned long  dwReserved0, dwReserved1;
+    unsigned short cFileName[260];
+    unsigned short cAlternateFileName[14];
+} WIN32_FIND_DATAW, *LPWIN32_FIND_DATAW, *PWIN32_FIND_DATAW;
+/* NOTE: the SDK's winbase.h already defines the ANSI WIN32_FIND_DATAA; only the wide W variant is
+ * missing, so we define only that (struct tags can't be #ifndef-guarded against the SDK). */
+#endif
+
+/* OSVERSIONINFOEX (GetVersionEx), wide + ANSI. */
+#ifndef RXDK_OSVERSIONINFOEX_DEFINED
+#define RXDK_OSVERSIONINFOEX_DEFINED
+typedef struct _OSVERSIONINFOEXW {
+    unsigned long  dwOSVersionInfoSize;
+    unsigned long  dwMajorVersion;
+    unsigned long  dwMinorVersion;
+    unsigned long  dwBuildNumber;
+    unsigned long  dwPlatformId;
+    unsigned short szCSDVersion[128];
+    unsigned short wServicePackMajor;
+    unsigned short wServicePackMinor;
+    unsigned short wSuiteMask;
+    unsigned char  wProductType;
+    unsigned char  wReserved;
+} OSVERSIONINFOEXW, *LPOSVERSIONINFOEXW, *POSVERSIONINFOEXW;
+typedef struct _OSVERSIONINFOEXA {
+    unsigned long  dwOSVersionInfoSize;
+    unsigned long  dwMajorVersion;
+    unsigned long  dwMinorVersion;
+    unsigned long  dwBuildNumber;
+    unsigned long  dwPlatformId;
+    char           szCSDVersion[128];
+    unsigned short wServicePackMajor;
+    unsigned short wServicePackMinor;
+    unsigned short wSuiteMask;
+    unsigned char  wProductType;
+    unsigned char  wReserved;
+} OSVERSIONINFOEXA, *LPOSVERSIONINFOEXA, *POSVERSIONINFOEXA;
+#ifndef OSVERSIONINFOEX
+#define OSVERSIONINFOEX OSVERSIONINFOEXA
+#endif
+#endif
+
+/* PE image DOS header — coree.h (pulled in via image.h) references IMAGE_DOS_HEADER; the SDK's
+ * windows.h path doesn't expose it. coree itself is excluded (Windows PE-EE hosting, unused). */
+#ifndef RXDK_IMAGE_DOS_HEADER_DEFINED
+#define RXDK_IMAGE_DOS_HEADER_DEFINED
+typedef struct _IMAGE_DOS_HEADER {
+    unsigned short e_magic, e_cblp, e_cp, e_crlc, e_cparhdr, e_minalloc, e_maxalloc;
+    unsigned short e_ss, e_sp, e_csum, e_ip, e_cs, e_lfarlc, e_ovno, e_res[4];
+    unsigned short e_oemid, e_oeminfo, e_res2[10];
+    long           e_lfanew;
+} IMAGE_DOS_HEADER, *PIMAGE_DOS_HEADER;
+#endif
+
+/* ReplaceFile flag (w32file). */
+#ifndef REPLACEFILE_WRITE_THROUGH
+#define REPLACEFILE_WRITE_THROUGH 0x00000001
 #endif
 
 /* GetSystemInfo / SYSTEM_INFO. */

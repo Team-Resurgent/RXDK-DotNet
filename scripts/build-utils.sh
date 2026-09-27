@@ -19,7 +19,7 @@ mkdir -p "$OUT"
 FLAGS=(
   -target i686-pc-windows-gnu -march=pentium3 -c -O1 -g0
   -ffreestanding -fno-stack-protector -fno-sanitize=undefined -femulated-tls
-  -fms-extensions -fms-compatibility
+  -fms-extensions
   -DHAVE_CONFIG_H
   -include "$GEN/config.h"
   -include "$PAL/rxdk/win32_supplement.h"

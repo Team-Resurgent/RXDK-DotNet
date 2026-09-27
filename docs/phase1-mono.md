@@ -163,9 +163,42 @@ Win32 declarations Mono 6.13 assumes.
 `MmQueryStatistics`, `GetSystemInfo` over the kernel, `_beginthreadex` over `CreateThread`. These
 are the genuine PAL shims (small). Compilation doesn't need them; the eventual runtime link does.
 
-**Next (milestone 3):** `mono/sgen` (GC) + `mono/metadata` (loader/type-system) — the bulk — then
-`mono/mini` + `mono/mini/interp`. Watch item: the SSE1 audit of `mini-x86.c`/`tramp-x86.c`/
-`mono-context.c` (arch glue), per §4.
+## Milestone 3 — status (2026-09-27): sgen + metadata compiling ✅
+
+`scripts/build-metadata.sh` compiles **132/132** `mono/sgen` + `mono/metadata` sources (0 failures)
+→ `build-out/lib/libmonoruntime.lib`. utils re-verified at 77/77, eglib at 26/28 — no regressions.
+The GC + assembly loader + type system now build for the Xbox.
+
+Key changes this milestone:
+- **Dropped `-fms-compatibility` (kept `-fms-extensions`) across all build scripts.** Critical
+  lesson: `-fms-compatibility` makes clang define *neither* `__GNUC__` nor `_MSC_VER`, so Mono's
+  GCC-path code (`sgen_dummy_use`, `mono-membar.h`, …) hit `#error`. `-fms-extensions` alone keeps
+  `__GNUC__` and still accepts the MSVC keywords; the two spellings the SDK's D3D headers use
+  (`__forceinline`, `_inline`) are `#define`d in `config.h`.
+- **`config.h`:** `USE_WINDOWS_BACKEND` (adds `windows_tib` to `MonoThreadInfo`),
+  `UNICODE`/`_UNICODE` (generic Win32 A/W macros → W, as Mono expects), `USE_GCC_ATOMIC_OPS`.
+- **`win32_supplement.h` grew** to cover everything metadata references: `WSABUF`, `WIN32_FIND_DATAW`,
+  `OSVERSIONINFO(EX)` A/W, `IMAGE_DOS_HEADER`, `struct _timeb`/`utimbuf`, `COINIT_*`,
+  `FILE_ATTRIBUTE_*`/`FILE_TYPE_*`, `REPLACEFILE_*`.
+- **New header shims:** `objbase.h` (COM include), `process.h`, `psapi.h`; `winsock2.h` now also
+  pulls the SDK's real `sys/_timeval.h` for `struct timeval`.
+- **Excluded** (disabled subsystems / not needed): COM (`coree`, `cominterop`, `marshal-windows`),
+  sockets (`w32socket*`, `threadpool-io*`), processes (`w32process*`), `mono-security-windows`,
+  `console-null`.
+
+**Deferred straggler — `w32file-win32.c` (1 file):** blocked by a genuine **RXDK-SDK bug** —
+`winbase.h:1447` does `typedef WIN32_FIND_DATAA WIN32_FIND_DATA` *unconditionally* (ignores
+`UNICODE`) and ships no `WIN32_FIND_DATAW`, so Mono's generic find_first decl clashes with its
+explicit-W definition. **Fix belongs upstream in RXDK-SDK** (make `winbase.h` UNICODE-aware + add
+the W struct). Needed for Win32 file IO at milestone 4.
+
+**Still owed at link time:** `win32_supplement.c` — definitions for the Vista-only primitives the
+supplement declares (`SRWLOCK`/`CONDITION_VARIABLE` over `CRITICAL_SECTION`, `GlobalMemoryStatusEx`
+over `MmQueryStatistics`, `_beginthreadex` over `CreateThread`, `GetSystemInfo`, …).
+
+**Next (milestone 4):** `mono/mini` + `mono/mini/interp` — the JIT-driver/interpreter/arch layer.
+This is where the **SSE1 audit** of `mini-x86.c`/`tramp-x86.c`/`mono-context.c` lands (§4). After
+that: `win32_supplement.c` + the link into an embedding host + a bundled managed assembly.
 
 ## First files to open
 
