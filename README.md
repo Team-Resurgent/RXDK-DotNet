@@ -25,13 +25,14 @@ today, verified on xemu:
 
 - **JIT enabled (x87 codegen) in the `--interpreter` configuration** — the interpreter needs the JIT
   to compile wrappers/trampolines; it compiles and links, and generates native code.
-- **A managed self-test passes 37/37** on-device (`tests/managed/Test.cs`): **delegates**
+- **A managed self-test passes 43/43** on-device (`tests/managed/Test.cs`): **delegates**
   (`Func<...>` via the native→interp trampoline), **`System.Console.WriteLine`** (to the debug UART),
-  integer/long/ulong and **x87 float+double** arithmetic, bitops/shifts, arrays + bounds exceptions,
-  foreach, jagged arrays, strings (`Substring`/`ToUpper`/`Split`/`Trim`), `int.Parse`/`int.ToString`,
-  **generics** (`List<T>`), structs, boxing, static/instance fields, **virtual + interface dispatch**,
-  enums, switch, recursion, ref/out, params, and full **exception handling** (try/catch/finally,
-  rethrow, null-ref, div-by-zero).
+  integer/long/ulong and **x87 float+double** arithmetic, **float/double `ToString`**, bitops/shifts,
+  arrays + bounds exceptions, foreach, jagged arrays, strings (`Substring`/`ToUpper`/`Split`/`Trim`/
+  `StartsWith`), `int.Parse`/`int.ToString`, **generics** (`List<T>`), structs, boxing, static/instance
+  fields, **virtual + interface dispatch**, enums, switch, recursion, ref/out, params, full **exception
+  handling** (try/catch/finally, rethrow, null-ref, div-by-zero), **`DateTime.Now`**, and **file I/O
+  reads** (`File.Exists`, `FileStream`, `Directory.Exists`).
 
 - **Mono's own JIT regression suite runs on-device — 711/711, 0 failures.** The upstream tests from
   [`mono/mini/*.cs`](vendor/mono/mono/mini) are built with Roslyn against our `mscorlib` and driven
@@ -53,8 +54,80 @@ today, verified on xemu:
   *Follow-ups:* `Directory.GetFiles` enumeration (corefx uses ntdll `NtQueryDirectoryFile`, not yet
   wired) and writes (the title drive is read-only when booted from disc).
 
-Build/run: `scripts/build-*.sh` compile the runtime layers, the corlib, and the test assembly, then
-package a bootable XBE/ISO; boot with `xemu -dvd_path <iso> -device lpc47m157 -serial stdio`.
+## Build & run
+
+Each `scripts/build-*.sh` compiles one layer (they don't auto-chain). Typical order after a clean
+checkout, and what to re-run after editing a given area:
+
+| Script | Builds | Re-run when you touch | Approx |
+|---|---|---|---|
+| [`scripts/build-eglib.sh`](scripts/build-eglib.sh)     | eglib (`monoeg_g_*`)            | eglib sources                          | ~20s |
+| [`scripts/build-utils.sh`](scripts/build-utils.sh)     | `libmonoutils` (incl. `mono-dl`)| `vendor/mono/mono/utils/*`, its excludes| ~90s |
+| [`scripts/build-metadata.sh`](scripts/build-metadata.sh)| `libmonoruntime` (sgen + metadata, incl. `w32file-win32`, `icall-windows`) | `vendor/mono/mono/metadata/*`, `sgen/*`, its excludes | ~2–3 min |
+| [`scripts/build-mini.sh`](scripts/build-mini.sh)       | `libmini` (JIT + interp)         | `vendor/mono/mono/mini/*` (e.g. `interp/transform.c`) | ~90s |
+| [`scripts/build-corlib.sh`](scripts/build-corlib.sh)   | `mscorlib.dll` (Roslyn)          | corlib sources / defines               | fast |
+| [`scripts/build-syscore.sh`](scripts/build-syscore.sh) | minimal `System.Core.dll` (LINQ) | corefx System.Linq / `build/managed/syscore-shims.cs` | fast |
+| [`scripts/build-testasm.sh`](scripts/build-testasm.sh) | `Test.dll` (self-test)           | `tests/managed/Test.cs`                | fast |
+| [`scripts/build-minitests.sh`](scripts/build-minitests.sh) | `mini-*.dll` (official suite) | curated test list                      | fast |
+| [`scripts/build-host.sh`](scripts/build-host.sh)       | links the XBE, packages the ISO  | `pal/src/*`, `tests/mono-host/host_main.c`, or any lib above | ~15s |
+
+Run on [xemu](https://xemu.app) (devkit build), cwd = the xemu dir so relative `roms\` resolve:
+
+```bash
+xemu.exe -dvd_path build-out/obj/host/RxdkMonoHost.iso -device lpc47m157 -serial stdio
+```
+
+Add `-d int -D int.log` to log guest CPU exceptions (page faults etc.) with faulting IP/SP/CR2 —
+essential for hard faults with no serial output.
+
+**Gotchas that will bite a fresh session** (see the `memory/` notes below):
+- **Kill `clang`/`llvm-lib` before `build-host`** and verify a probe string landed in the exe
+  (`grep -c <probe> build-out/obj/host/mono-host.exe`) — stale-link races produce confusing results.
+- **Stub-shadowing landmine** ([`pal/src/mono_stubs.c`](pal/src/mono_stubs.c)): no-op `int NAME(void){return 0;}`
+  stubs are linked after the archive group with `--allow-multiple-definition`. When a TU starts
+  compiling and provides the *real* symbol, its matching stub must be commented out or it silently
+  wins (returns 0). This has caused ~6 deep bugs already.
+- **P/Invoke fallback** ([`pal/src/win32_supplement.c`](pal/src/win32_supplement.c) `rxdk_dl_symbol`):
+  the Xbox has no user-mode loader, so `DllImport("kernel32"/"advapi32")` targets resolve through a
+  `mono_dl` fallback to linked-in functions. `SetLastError=true` DllImports are called **cdecl**
+  (caller-cleanup) on this build — their thunks must be cdecl or the stack corrupts (jump to `IP=1`).
+- Commit messages carry **no** `Co-Authored-By`. Mono changes go on the `xbox` branch of the
+  `vendor/mono` submodule (default CI branch is `teamresurgent`).
+
+## Next steps (roadmap for a follow-up session)
+
+Ordered roughly by value / tractability. Each names the concrete files to touch.
+
+1. **File writes** — reads work; writes need a *writable* volume (the title drive `D:\` is read-only
+   when booted from DVD). Use **`T:\`** — the title's per-title persistent HDD partition (writable on
+   the devkit/xemu HDD image); `Z:\` (cache) is the other option. Test `File.WriteAllText`/`FileStream`
+   write + read-back to `T:\`. The write path is already wired (`mono_w32file_write` in
+   [`pal/src/win32_supplement.c`](pal/src/win32_supplement.c) → `WriteFile`; corefx `WriteFile` via the
+   fallback), and `CreateFileW` (open/create) is thunked — so this is mostly picking `T:\` and testing.
+   Note: `T:\` may need the title to be HDD-installed, or an explicit mount; if `T:\` isn't present on
+   the DVD-booted image, check `Z:\` or mount a partition in the host before opening for write.
+2. **`Directory.GetFiles` / enumeration** — corefx `FileSystemEnumerator` uses **ntdll
+   `NtQueryDirectoryFile`** (currently unwired → OOM). Wire `NtQueryDirectoryFile`/`NtCreateFile`
+   (xboxkrnl exports them) in [`pal/src/win32_file_shims.c`](pal/src/win32_file_shims.c) + register in
+   the fallback, or redirect corefx enumeration to a `FindFirstFile`-style path. `FileInfo.Length`
+   also needs `GetFileAttributesExW` to fill the size (left 0 today — opening for `GetFileSize` faulted;
+   revisit).
+3. **Crypto RNG** — `mono_rand_*` are stubbed (return 0 → zero entropy), breaking `Guid.NewGuid`,
+   `Random`, `RNGCryptoServiceProvider`. Un-stub in [`pal/src/mono_stubs.c`](pal/src/mono_stubs.c) and
+   implement over an Xbox entropy source (`XeCryptRandom`/RDTSC-seeded PRNG) in the PAL.
+4. **Culture data** — `ves_icall_System_Globalization_Culture*/Calendar*/RegionInfo_fill_*` are
+   stubbed; invariant formatting works (ordinal `CompareInfo` + `_ecvt_s`), but culture-aware
+   format/parse and `CultureInfo.GetCultures` don't. Needs locale tables.
+5. **zlib** — `inflate`/`inflateInit2_` stubbed → `DeflateStream`/`GZipStream` don't work. Build the
+   bundled zlib or map to a real one.
+6. **More mini suites** — add to [`scripts/build-minitests.sh`](scripts/build-minitests.sh): the
+   remaining `vendor/mono/mono/mini/*.cs` (e.g. `gshared`, `ratests`) as corlib support allows.
+7. **Networking** — `Socket`/`Dns` icalls + `w32socket*` excluded. Large but self-contained; the Xbox
+   NIC works (xemu shows DHCP).
+
+A **Claude Code session on this machine** also carries persistent notes (its `memory/` store:
+`file-io.md`, `pinvoke-fallback.md`, `mono-stubs-shadowing.md`, `phase1b-corlib-loads.md`) with the
+deep on-device debugging details behind each of the above — a fresh session loads them automatically.
 
 - [`docs/port-plan.md`](docs/port-plan.md) — the full port plan, hardware constraints, the **SSE2**
   decision, PAL architecture, phased milestones, and the risk register.
