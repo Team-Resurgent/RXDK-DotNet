@@ -8,11 +8,27 @@ imports** (`libkernel`/`libc`/`libcpp`) to stay lean, while off-critical-path ne
 rather than being rebuilt. CI/release is appropriated from RXDK-Tools, with a hard **isa-scan
 PIII gate** on all native output.
 
-**Status: planning.** No runtime code yet. Start with the plan:
+**Status: the Mono runtime boots and runs managed code on the original Xbox (xemu).**
 
-- [`docs/port-plan.md`](docs/port-plan.md) — the full port plan: what we inherit from
-  RXDK-Libs, the hardware constraints, the pivotal **SSE2** decision, a Mono-vs-NativeAOT
-  comparison, the PAL architecture, phased milestones, and the risk register.
+Runtime choice resolved to **classic Mono 6.13** (x87 FP backend, interpreter-first), built MSVC-free
+with the RXDK clang/lld toolchain against a hand-written PAL over `xboxkrnl` + `libxapi`. What works
+today, verified on xemu:
 
-The runtime choice (Mono vs NativeAOT) is intentionally **undecided** and gated behind a
-Phase-0 spike (the OG Xbox's Pentium III is SSE1-only; modern .NET x86 codegen assumes SSE2).
+- **Full runtime init** — sgen GC, thread attach, metadata/loader/reflection/icalls; the app domain
+  is created and `mono_jit_init_version` returns a live domain.
+- **corlib loads** — a classic-Mono `mscorlib.dll` built with Roslyn, loaded from the DVD via a
+  read-based file-mapping shim (the Xbox has no `CreateFileMapping`).
+- **Managed IL executes on the interpreter** — e.g. `Fib(20) = 6765`, arithmetic, loops, and
+  value-type marshaling, invoked through `mono_runtime_invoke`.
+- **Managed `Console` output → debug serial** — `Console.Write`/`WriteLine` reach the UART through
+  real console handles in the PAL.
+
+**In progress:** enabling the JIT (x87 codegen) in the standard `--interpreter` configuration — the
+interpreter needs the JIT to compile its native entry trampolines (`interp_in` wrappers), so general
+managed code (any class with a static constructor) requires it. See [`docs/`](docs/).
+
+Build/run: `scripts/build-*.sh` compile the runtime layers, the corlib, and the test assembly, then
+package a bootable XBE/ISO; boot with `xemu -dvd_path <iso> -device lpc47m157 -serial stdio`.
+
+- [`docs/port-plan.md`](docs/port-plan.md) — the full port plan, hardware constraints, the **SSE2**
+  decision, PAL architecture, phased milestones, and the risk register.

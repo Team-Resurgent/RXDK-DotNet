@@ -28,11 +28,25 @@ extern int  mono_aot_mode; /* MonoAotMode global in mini-runtime.c */
 typedef struct _MonoClass  MonoClass;
 typedef struct _MonoMethod MonoMethod;
 typedef struct _MonoObject MonoObject;
+typedef struct _MonoString MonoString;
 extern MonoImage  *mono_assembly_get_image(MonoAssembly *assembly);
 extern MonoClass  *mono_class_from_name(MonoImage *image, const char *name_space, const char *name);
 extern MonoMethod *mono_class_get_method_from_name(MonoClass *klass, const char *name, int param_count);
 extern MonoObject *mono_runtime_invoke(MonoMethod *method, void *obj, void **params, MonoObject **exc);
 extern void       *mono_object_unbox(MonoObject *obj);
+/* Managed->native bridge for redirecting managed Console output to the debug serial. */
+extern void  mono_add_internal_call(const char *name, const void *method);
+extern char *mono_string_to_utf8(MonoString *s);
+extern void  mono_free(void *ptr);
+
+/* The single native sink behind RxdkConsole.Write(string) -> managed Console output on serial. */
+static void rxdk_console_write(MonoString *s)
+{
+    char *u;
+    if (!s) return;
+    u = mono_string_to_utf8(s);
+    if (u) { OutputDebugStringA(u); mono_free(u); }
+}
 
 /* xboxkrnl: hand control back to the dashboard/firmware. FIRMWARE_REENTRY: 0=Halt, 1=Reboot,
  * 2=QuickReboot. Used as the app's exit path (an Xbox title never "returns" to a shell). */
@@ -71,10 +85,11 @@ static void rxdk_run_managed(void)
     MonoAssembly *asmb;
     MonoImage *img;
     MonoClass *klass;
-    MonoMethod *add, *fib;
+    MonoMethod *runall;
     MonoObject *res, *exc;
-    int a, b;
-    void *args[2];
+
+    /* Register the serial sink for managed Console output before any managed code runs. */
+    mono_add_internal_call("RxdkConsole::Write", (const void *)rxdk_console_write);
 
     OutputDebugStringA("RXDK-DotNet: loading D:\\assy\\Test.dll\n");
     asmb = mono_assembly_open("D:\\assy\\Test.dll", &st);
@@ -82,22 +97,15 @@ static void rxdk_run_managed(void)
     img = mono_assembly_get_image(asmb);
     klass = mono_class_from_name(img, "", "RxdkTest");
     if (!klass) { OutputDebugStringA("RXDK-DotNet: class RxdkTest not found\n"); return; }
-    add = mono_class_get_method_from_name(klass, "Add", 2);
-    fib = mono_class_get_method_from_name(klass, "Fib", 1);
-    if (!add || !fib) { OutputDebugStringA("RXDK-DotNet: method not found\n"); return; }
+    runall = mono_class_get_method_from_name(klass, "RunAll", 0);
+    if (!runall) { OutputDebugStringA("RXDK-DotNet: RunAll not found\n"); return; }
 
-    a = 20; b = 22; args[0] = &a; args[1] = &b; exc = 0;
-    OutputDebugStringA("RXDK-DotNet: invoking RxdkTest.Add(20, 22)\n");
-    res = mono_runtime_invoke(add, 0, args, &exc);
-    if (exc) { OutputDebugStringA("RXDK-DotNet: Add threw an exception\n"); return; }
-    rxdk_print_int("RXDK-DotNet: Add returned = ", *(int *)mono_object_unbox(res));
-
-    a = 20; args[0] = &a; exc = 0;
-    OutputDebugStringA("RXDK-DotNet: invoking RxdkTest.Fib(20)\n");
-    res = mono_runtime_invoke(fib, 0, args, &exc);
-    if (exc) { OutputDebugStringA("RXDK-DotNet: Fib threw an exception\n"); return; }
-    rxdk_print_int("RXDK-DotNet: Fib(20) = ", *(int *)mono_object_unbox(res));
-    OutputDebugStringA("RXDK-DotNet: managed execution OK\n");
+    OutputDebugStringA("RXDK-DotNet: invoking RxdkTest.RunAll() (managed self-test)\n");
+    exc = 0;
+    res = mono_runtime_invoke(runall, 0, (void **)0, &exc);
+    if (exc) { OutputDebugStringA("RXDK-DotNet: RunAll threw an exception\n"); return; }
+    rxdk_print_int("RXDK-DotNet: RunAll failures = ", res ? *(int *)mono_object_unbox(res) : -1);
+    OutputDebugStringA("RXDK-DotNet: managed self-test complete\n");
 }
 static void test_path(const char *p)
 {

@@ -210,6 +210,55 @@ int GetVersionExW(void *info)
     return 1;
 }
 
+/* ---- console I/O: managed Console <-> debug serial ---------------------------------------------
+ * Mono's w32file backend is otherwise stubbed; the only consumer that matters is System.Console.
+ * Console..cctor builds FileStreams over the MonoIO console handles, so those handles must be
+ * non-NULL and report as character devices (else FileStream faults / the cctor hard-crashes).
+ * We hand out small sentinel handles and route writes to OutputDebugStringA, so Console.Write/
+ * WriteLine (and Debug output that funnels through stdout) reach the UART with no managed SetOut. */
+#define RXDK_CON_OUT ((void *)1)
+#define RXDK_CON_ERR ((void *)2)
+#define RXDK_CON_IN  ((void *)3)
+#ifndef FILE_TYPE_CHAR
+#define FILE_TYPE_UNKNOWN 0x0000
+#define FILE_TYPE_CHAR    0x0002
+#endif
+
+void *mono_w32file_get_console_output(void) { return RXDK_CON_OUT; }
+void *mono_w32file_get_console_error(void)  { return RXDK_CON_ERR; }
+void *mono_w32file_get_console_input(void)  { return RXDK_CON_IN;  }
+
+int mono_w32file_get_type(void *handle)
+{
+    if (handle == RXDK_CON_OUT || handle == RXDK_CON_ERR || handle == RXDK_CON_IN)
+        return FILE_TYPE_CHAR;
+    return FILE_TYPE_UNKNOWN;
+}
+
+int mono_w32file_write(void *handle, const void *buffer, unsigned int numbytes,
+                       unsigned int *byteswritten, int *win32error)
+{
+    if (handle == RXDK_CON_OUT || handle == RXDK_CON_ERR) {
+        const char *p = (const char *)buffer;
+        unsigned int off = 0;
+        char line[257];
+        while (off < numbytes) {
+            unsigned int n = numbytes - off;
+            if (n > sizeof(line) - 1) n = sizeof(line) - 1;
+            for (unsigned int i = 0; i < n; ++i) line[i] = p[off + i];
+            line[n] = 0;
+            OutputDebugStringA(line);
+            off += n;
+        }
+        if (byteswritten) *byteswritten = numbytes;
+        if (win32error) *win32error = 0;
+        return 1;
+    }
+    if (byteswritten) *byteswritten = 0;
+    if (win32error) *win32error = 6 /* ERROR_INVALID_HANDLE */;
+    return 0;
+}
+
 /* ---- file mapping: read-into-buffer emulation --------------------------------------------------
  * The Xbox has NO Win32 file-mapping API (libxapi ships neither CreateFileMapping, MapViewOfFile
  * nor UnmapViewOfFile), and Mono's HOST_WIN32 image loader (metadata/image.c) maps assemblies via

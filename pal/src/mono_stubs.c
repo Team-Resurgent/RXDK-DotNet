@@ -83,16 +83,16 @@ int mono_w32file_find_next(void){return 0;}
 int mono_w32file_flush(void){return 0;}
 int mono_w32file_get_attributes(void){return 0;}
 int mono_w32file_get_attributes_ex(void){return 0;}
-int mono_w32file_get_console_error(void){return 0;}
-int mono_w32file_get_console_input(void){return 0;}
-int mono_w32file_get_console_output(void){return 0;}
+/* int mono_w32file_get_console_error(void){return 0;}  -- now real (win32_supplement.c console I/O) */
+/* int mono_w32file_get_console_input(void){return 0;}  -- now real (win32_supplement.c console I/O) */
+/* int mono_w32file_get_console_output(void){return 0;}  -- now real (win32_supplement.c console I/O) */
 int mono_w32file_get_cwd(void){return 0;}
 int mono_w32file_get_disk_free_space(void){return 0;}
 int mono_w32file_get_drive_type(void){return 0;}
 int mono_w32file_get_file_size(void){return 0;}
 int mono_w32file_get_file_system_type(void){return 0;}
 int mono_w32file_get_logical_drive(void){return 0;}
-int mono_w32file_get_type(void){return 0;}
+/* int mono_w32file_get_type(void){return 0;}  -- now real (win32_supplement.c console I/O) */
 int mono_w32file_init(void){return 0;}
 int mono_w32file_lock(void){return 0;}
 int mono_w32file_move(void){return 0;}
@@ -105,7 +105,7 @@ int mono_w32file_set_cwd(void){return 0;}
 int mono_w32file_set_times(void){return 0;}
 int mono_w32file_truncate(void){return 0;}
 int mono_w32file_unlock(void){return 0;}
-int mono_w32file_write(void){return 0;}
+/* int mono_w32file_write(void){return 0;}  -- now real (win32_supplement.c console I/O) */
 int mono_w32process_cleanup(void){return 0;}
 int mono_w32process_init(void){return 0;}
 int mono_w32process_signal_finished(void){return 0;}
