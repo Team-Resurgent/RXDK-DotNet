@@ -201,17 +201,20 @@ int inflate(void){return 0;}
 int inflateInit2_(void){return 0;}
 /* int mono_file_map(void){return 0;}  -- now real (mono-mmap-windows.c / win32_supplement.c) */
 /* int mono_file_unmap(void){return 0;}  -- now real (mono-mmap-windows.c / win32_supplement.c) */
-int mono_icall_get_environment_variable_names(void){return 0;}
-int mono_icall_get_file_path_prefix(void){return 0;}
-int mono_icall_get_machine_name(void){return 0;}
-int mono_icall_get_new_line(void){return 0;}
-int mono_icall_get_platform(void){return 0;}
-int mono_icall_get_windows_folder_path(void){return 0;}
-int mono_icall_is_64bit_os(void){return 0;}
-int mono_icall_make_platform_path(void){return 0;}
-int mono_icall_module_get_hinstance(void){return 0;}
-int mono_icall_wait_for_input_idle(void){return 0;}
-int mono_icall_write_windows_debug_string(void){return 0;}
+/* mono_icall_* below are now REAL (icall-windows.c compiles once shlobj.h/SendMessageTimeout gates
+ * are forced OFF in config.h). Stubbing them shadowed the real symbols -> mono_icall_get_new_line
+ * returned NULL -> Environment.NewLine null -> System.Console cctor NRE. Do NOT re-add these. */
+/* int mono_icall_get_environment_variable_names(void){return 0;} */
+/* int mono_icall_get_file_path_prefix(void){return 0;} */
+/* int mono_icall_get_machine_name(void){return 0;} */
+/* int mono_icall_get_new_line(void){return 0;} */
+/* int mono_icall_get_platform(void){return 0;} */
+/* int mono_icall_get_windows_folder_path(void){return 0;} */
+/* int mono_icall_is_64bit_os(void){return 0;} */
+/* int mono_icall_make_platform_path(void){return 0;} */
+/* int mono_icall_module_get_hinstance(void){return 0;} */
+/* int mono_icall_wait_for_input_idle(void){return 0;} */
+/* int mono_icall_write_windows_debug_string(void){return 0;} */
 /* mono_jit_init / mono_jit_init_version are now REAL (driver.c compiles) — no stub. */
 int mono_mmap_close(void){return 0;}
 int mono_mmap_configure_inheritability(void){return 0;}
@@ -230,7 +233,7 @@ int mono_mmap_unmap(void){return 0;}
 /* int mono_valloc_aligned(void){return 0;}  -- now real (mono-mmap-windows.c / win32_supplement.c) */
 /* int mono_valloc_granule(void){return 0;}  -- now real (mono-mmap-windows.c / win32_supplement.c) */
 /* int mono_vfree(void){return 0;}  -- now real (mono-mmap-windows.c / win32_supplement.c) */
-int ves_icall_System_Environment_BroadcastSettingChange(void){return 0;}
+/* int ves_icall_System_Environment_BroadcastSettingChange(void){return 0;}  -- now real (icall-windows.c) */
 
 /* Symbols newly referenced (cdecl, undecorated) once the real JIT objects are pulled in. GetFileAttributesW
  * here is the cdecl form (distinct from the stdcall @4 thunk in win_cdecl_shims.c); route it to the

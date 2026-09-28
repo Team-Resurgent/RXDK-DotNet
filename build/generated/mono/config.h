@@ -78,6 +78,18 @@
  * These #ifndef-guard in w32subset.h, and config.h is force-included first, so our value sticks. */
 #define HAVE_API_SUPPORT_WIN32_TIMERS 0
 #define HAVE_API_SUPPORT_WIN32_COMMAND_LINE_TO_ARGV 0
+/*   - SH_GET_FOLDER_PATH: shlobj.h / SHGetFolderPathW (shell32) — not on Xbox. Forcing it OFF makes
+ *     icall-windows.c compile the g_unsupported_api fallback for Environment.GetFolderPath instead of
+ *     including shlobj.h. If this file fails to compile, mono_icall_get_new_line goes missing and the
+ *     stub returns NULL, so Environment.NewLine is null and System.Console's cctor NREs. */
+#define HAVE_API_SUPPORT_WIN32_SH_GET_FOLDER_PATH 0
+/*   - SEND_MESSAGE_TIMEOUT: user32 window messaging (HWND_BROADCAST/WM_SETTINGCHANGE) — no windowing
+ *     on Xbox. OFF makes Environment.BroadcastSettingChange the unsupported stub (icall-windows.c). */
+#define HAVE_API_SUPPORT_WIN32_SEND_MESSAGE_TIMEOUT 0
+/*   - GET_COMPUTER_NAME: GetComputerNameW — not in libxapi. OFF => Environment.MachineName == "mono".
+ *   - WAIT_FOR_INPUT_IDLE: WaitForInputIdle (user32) — no GUI on Xbox. OFF => unsupported stub. */
+#define HAVE_API_SUPPORT_WIN32_GET_COMPUTER_NAME 0
+#define HAVE_API_SUPPORT_WIN32_WAIT_FOR_INPUT_IDLE 0
 /* NOTE: NOT a UNICODE build. RXDK/libxapi implements the ANSI (A) Win32 file APIs; its WIDE (W)
  * ones are broken on D:\ paths (verified on-device). Leaving UNICODE undefined makes Mono's generic
  * Win32 calls resolve to the working A variants; the few explicit-W calls are W->A-thunked in

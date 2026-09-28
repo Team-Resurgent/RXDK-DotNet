@@ -64,6 +64,8 @@ public static class RxdkTest
     static bool DTrue() { return true; }
     static bool T_DelegateBool() { Func<bool> f = DTrue; return f(); }
 
+    static bool T_Console()   { System.Console.WriteLine("[console] managed Console.WriteLine works"); return true; }
+
     static bool T_IntArith()  { return 7 * 6 == 42 && 100 / 7 == 14 && 100 % 7 == 2 && (3 - 9) == -6; }
     static bool T_Unchecked() { unchecked { int x = int.MaxValue; return x + 1 == int.MinValue; } }
     static bool T_Long()      { long a = 1L << 40; long b = 1000000L * 1000000L; return a == 1099511627776L && b == 1000000000000L; }
@@ -197,19 +199,21 @@ public static class RxdkTest
     }
 
     // ---- runner -----------------------------------------------------------------------------
-    // Output via the raw RxdkConsole.Write sink (managed System.Console.WriteLine still hits an
-    // exception-construction recursion in the Console path - a corlib gap, tracked separately).
-    // Delegates DO work now (Delegate/DelegateBool below invoke through the native->interp trampoline).
+    // PASS/FAIL lines go via the raw RxdkConsole.Write sink; the Console test proves managed
+    // System.Console.WriteLine also works (routes to the debug UART). Delegates work through the
+    // native->interp trampoline (Delegate/DelegateBool below).
     public static int RunAll()
     {
         RxdkConsole.Write("=== RXDK-DotNet managed self-test (raw sink) ===\n");
         passed = 0; failed = 0;
         try { Check("Delegate",     T_Delegate()); }     catch (Exception e) { Exc("Delegate", e); }
         try { Check("DelegateBool", T_DelegateBool()); } catch (Exception e) { Exc("DelegateBool", e); }
-        // NOTE: System.Console.WriteLine still throws TypeInitializationException - Console..cctor's
-        // Encoding.Default path NREs deep in corlib (GetEncoding). Tracked as a corlib follow-up; the
-        // harness uses the RxdkConsole.Write sink. (No infinite recursion any more - the Unsafe
-        // intrinsics fixed that.)
+        try { Check("Console",      T_Console()); }      catch (Exception e) { Exc("Console", e); }
+        // System.Console.WriteLine now WORKS (routes to the debug UART via the PAL console handle).
+        // The fix: Environment.NewLine was returning null because icall-windows.c failed to compile
+        // (shlobj.h), so its mono_icall_get_new_line was shadowed by a null-returning stub, NREing
+        // System.Console's cctor. The harness still uses the RxdkConsole.Write sink for its PASS/FAIL
+        // lines (lower-risk, no dependency on the Console stream setup), but Console.WriteLine is live.
         try { Check("IntArith",    T_IntArith()); }    catch (Exception e) { Exc("IntArith", e); }
         try { Check("Unchecked",   T_Unchecked()); }   catch (Exception e) { Exc("Unchecked", e); }
         try { Check("Long",        T_Long()); }        catch (Exception e) { Exc("Long", e); }
