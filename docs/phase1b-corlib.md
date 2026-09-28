@@ -77,6 +77,35 @@ excludes) and compiles with Roslyn `/nostdlib`. Findings:
 - Remaining work is source-list completeness + `-define` tuning (audit the exact `net_4_x`
   `MONO_FEATURE_*` set), then link. Multi-iteration but tractable.
 
+## RESULT (2026-09-27): mscorlib.dll BUILDS — 0 errors, 4.7 MB, 1994 sources
+
+`scripts/build-corlib.sh` now produces a classic-Mono-6.13 `mscorlib.dll` with Roslyn. Error
+trajectory: **41,422 → 1,254 → 531 → 40 → 5 → 0.** The fixes, in order of impact:
+1. **`external/corefx` submodule** (core `System.*` types) — 41k → 1.2k.
+2. **Glob-aware source expansion** — mono `.sources` entries are globs with `:excluded` suffixes
+   (e.g. `Generic/*.cs:Foo.cs`); a literal read skipped the generic collections. 1.2k → 531.
+3. **`external/corert` submodule** (`CancellationToken`, `Stream`, `SafeBuffer`, …) — 531 → 40.
+4. **`win32_build_corlib.dll.sources`** (the win32 base list — `Interop.Libraries` etc.) added
+   alongside `win32_net_4_x`; path-level exclude subtraction to kill glob/literal dups
+   (`RegistryAccessRule`). 40 → 0 compile errors.
+5. **Delay-sign with `ecma.pub`** (`-delaysign+ -keyfile:…/ecma.pub`) — correct strong-name token
+   (`b77a5c561934e089`), overriding AssemblyInfo's relative path. Produces the DLL.
+
+Defines: the full `net_4_x` set from `net_4_x.make` + `class/corlib/Makefile` (`FEATURE_*`,
+`MONO_FEATURE_*`, `INSIDE_CORLIB`, `GENERICS_WORK`, …), `BIT64` omitted (i686 target). `Consts.cs`
+generated from `Consts.cs.in` with the pinned corlib version.
+
+**No fundamental incompatibility** — Roslyn 13 builds Mono 6.13 corlib cleanly. The build inits
+`external/{corefx,corert,referencesource}` automatically.
+
+### Next: load it
+1. Rebuild metadata (correct `MONO_CORLIB_VERSION` now in `config.h`) + relink the host.
+2. Host: `mono_set_assemblies_path()` / `mono_assembly_setrootdir()` → the DVD dir; bundle
+   `mscorlib.dll` in the ISO next to `default.xbe`.
+3. Boot → `mono_jit_init` should return non-NULL (corlib loaded, version matches). Expect a second
+   round of runtime icall gaps to surface (replace stubbed icalls that corlib init actually calls).
+4. Load + interpret a trivial app assembly → managed output on serial.
+
 ## Milestone ladder (Phase 1b)
 
 1. Build `mscorlib.dll` with Roslyn (iterate to a clean assembly).
