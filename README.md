@@ -46,6 +46,13 @@ today, verified on xemu:
   (`kernel32!GetTimeZoneInformation` in libxapi), resolved through a Mono dynamic-loader fallback that
   maps `DllImport` targets to linked-in functions, since the Xbox has no user-mode loader.
 
+- **File I/O reads** — `File.Exists`, `FileStream` reads, and `Directory.Exists` work off the DVD.
+  The corlib file stack is mixed (corefx `File`/`Directory` P/Invoke `kernel32` directly; `FileStream`
+  is Mono's `MonoIO`), both served over the RXDK ANSI Win32 APIs via `WIN32_FIND_DATAW`/W→A thunks
+  ([`pal/src/win32_file_shims.c`](pal/src/win32_file_shims.c)) and the P/Invoke fallback.
+  *Follow-ups:* `Directory.GetFiles` enumeration (corefx uses ntdll `NtQueryDirectoryFile`, not yet
+  wired) and writes (the title drive is read-only when booted from disc).
+
 Build/run: `scripts/build-*.sh` compile the runtime layers, the corlib, and the test assembly, then
 package a bootable XBE/ISO; boot with `xemu -dvd_path <iso> -device lpc47m157 -serial stdio`.
 
