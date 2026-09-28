@@ -134,8 +134,10 @@ int ves_icall_Mono_Security_Cryptography_KeyPairPersistence_ProtectMachine(void)
 int ves_icall_Mono_Security_Cryptography_KeyPairPersistence_ProtectUser(void){return 0;}
 int ves_icall_System_Diagnostics_FileVersionInfo_GetVersionInfo_internal(void){return 0;}
 int ves_icall_System_Globalization_CalendarData_fill_calendar_data(void){return 0;}
-int ves_icall_System_Globalization_CompareInfo_internal_compare(void){return 0;}
-int ves_icall_System_Globalization_CompareInfo_internal_index(void){return 0;}
+/* internal_compare/internal_index are now REAL (ordinal collation in win32_supplement.c). The
+ * return-0 stubs made CompareInfo report "equal"/"found at 0", breaking String.StartsWith/Compare. */
+/* int ves_icall_System_Globalization_CompareInfo_internal_compare(void){return 0;} */
+/* int ves_icall_System_Globalization_CompareInfo_internal_index(void){return 0;} */
 int ves_icall_System_Globalization_CultureData_fill_culture_data(void){return 0;}
 int ves_icall_System_Globalization_CultureData_fill_number_data(void){return 0;}
 int ves_icall_System_Globalization_CultureInfo_construct_internal_locale_from_lcid(void){return 0;}

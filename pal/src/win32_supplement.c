@@ -404,3 +404,49 @@ void rxdk_register_pinvoke_fallback(void)
     mono_dl_fallback_register(rxdk_dl_load, rxdk_dl_symbol, rxdk_dl_close, NULL);
 }
 
+/* ---- ordinal collation icalls (System.Globalization.CompareInfo) ----------------------------- *
+ * The culture-aware collation lives in Mono's locales.c and needs ICU / collation tables the Xbox
+ * doesn't ship, and managed collation is off (MSCompatUnicodeTable not ready). We implement ORDINAL
+ * comparison (UTF-16 code units, ASCII-fold for IgnoreCase) — correct for ASCII/most BMP and the
+ * honest default without collation data. Without these, the mono_stubs.c stubs returned 0, so the
+ * CompareInfo path (String.StartsWith/EndsWith/Compare = "Compare(...) == 0", IndexOf) was broken —
+ * e.g. "one".StartsWith("T") returned true. CompareOptions: IgnoreCase=0x01, OrdinalIgnoreCase=0x10000000. */
+static unsigned short rxdk_fold(unsigned short c, int ignorecase)
+{
+    return (ignorecase && c >= 'a' && c <= 'z') ? (unsigned short)(c - 32) : c;
+}
+int ves_icall_System_Globalization_CompareInfo_internal_compare(
+    const unsigned short *s1, int l1, const unsigned short *s2, int l2, int options)
+{
+    int ic = (options & (0x01 | 0x10000000)) != 0;
+    int n = l1 < l2 ? l1 : l2, i;
+    if (!s1 || !s2) return (s1 == s2) ? 0 : (s1 ? 1 : -1);
+    for (i = 0; i < n; i++) {
+        unsigned short a = rxdk_fold(s1[i], ic), b = rxdk_fold(s2[i], ic);
+        if (a != b) return a < b ? -1 : 1;
+    }
+    return (l1 == l2) ? 0 : (l1 < l2 ? -1 : 1);
+}
+int ves_icall_System_Globalization_CompareInfo_internal_index(
+    const unsigned short *source, int sindex, int count, const unsigned short *value, int value_length, int first)
+{
+    int i, j;
+    if (!source) return -1;
+    if (value_length <= 0) return sindex;            /* empty needle matches at the start position */
+    if (first) {
+        for (i = sindex; i + value_length <= sindex + count; i++) {
+            for (j = 0; j < value_length; j++) if (source[i + j] != value[j]) break;
+            if (j == value_length) return i;
+        }
+    } else {
+        /* LastIndexOf: sindex is the highest index to consider; scan backward over `count` chars. */
+        int start = sindex - count + 1; if (start < 0) start = 0;
+        for (i = sindex; i >= start; i--) {
+            if (i + value_length > sindex + 1) continue;
+            for (j = 0; j < value_length; j++) if (source[i + j] != value[j]) break;
+            if (j == value_length) return i;
+        }
+    }
+    return -1;
+}
+

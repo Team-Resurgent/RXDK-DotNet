@@ -116,6 +116,12 @@ public static class RxdkTest
         return "Hello".ToUpper() == "HELLO" && "Hello".IndexOf('l') == 2 &&
                "a,b,c".Split(',').Length == 3 && "  x  ".Trim() == "x";
     }
+    static bool T_StartsWith()
+    {
+        // regression for generics.cs test_0_fullaot_linq (Where(StartsWith("T")))
+        return "one".StartsWith("T") == false && "Test".StartsWith("T") == true &&
+               "one".StartsWith("o") == true  && "".StartsWith("T") == false;
+    }
     static bool T_IntToString() { return 42.ToString() == "42" && (-7).ToString() == "-7"; }
     static bool T_Parse()       { return int.Parse("123") == 123; }
 
@@ -234,6 +240,7 @@ public static class RxdkTest
         try { Check("Jagged",      T_Jagged()); }      catch (Exception e) { Exc("Jagged", e); }
         try { Check("String",      T_String()); }      catch (Exception e) { Exc("String", e); }
         try { Check("StringApi",   T_StringApi()); }   catch (Exception e) { Exc("StringApi", e); }
+        try { Check("StartsWith",  T_StartsWith()); }  catch (Exception e) { Exc("StartsWith", e); }
         try { Check("IntToString", T_IntToString()); } catch (Exception e) { Exc("IntToString", e); }
         try { Check("Parse",       T_Parse()); }       catch (Exception e) { Exc("Parse", e); }
         try { Check("Struct",      T_Struct()); }      catch (Exception e) { Exc("Struct", e); }
