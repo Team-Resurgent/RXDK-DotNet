@@ -104,7 +104,7 @@ public static class RxdkTest
     static bool T_String()
     {
         string s = "ab" + "cd";
-        return s.Length == 4 && s == "abcd";   /* Substring/indexing temporarily out to isolate */
+        return s.Length == 4 && s == "abcd" && "hello".Substring(1, 3) == "ell" && "hello"[1] == 'e';
     }
     static bool T_StringApi()
     {
@@ -225,11 +225,9 @@ public static class RxdkTest
         try { Check("Foreach",     T_Foreach()); }     catch (Exception e) { Exc("Foreach", e); }
         try { Check("Jagged",      T_Jagged()); }      catch (Exception e) { Exc("Jagged", e); }
         try { Check("String",      T_String()); }      catch (Exception e) { Exc("String", e); }
-        // StringApi/IntToString/Parse: globalization/number-formatting corlib paths that hard-fault
-        // on this bring-up (not catchable) - disabled until the corlib gaps are filled.
-        // try { Check("StringApi",   T_StringApi()); }   catch (Exception e) { Exc("StringApi", e); }
-        // try { Check("IntToString", T_IntToString()); } catch (Exception e) { Exc("IntToString", e); }
-        // try { Check("Parse",       T_Parse()); }       catch (Exception e) { Exc("Parse", e); }
+        try { Check("StringApi",   T_StringApi()); }   catch (Exception e) { Exc("StringApi", e); }
+        try { Check("IntToString", T_IntToString()); } catch (Exception e) { Exc("IntToString", e); }
+        try { Check("Parse",       T_Parse()); }       catch (Exception e) { Exc("Parse", e); }
         try { Check("Struct",      T_Struct()); }      catch (Exception e) { Exc("Struct", e); }
         try { Check("Box",         T_Box()); }         catch (Exception e) { Exc("Box", e); }
         try { Check("StaticField", T_StaticField()); } catch (Exception e) { Exc("StaticField", e); }
@@ -241,8 +239,7 @@ public static class RxdkTest
         try { Check("Recursion",   T_Recursion()); }   catch (Exception e) { Exc("Recursion", e); }
         try { Check("RefOut",      T_RefOut()); }      catch (Exception e) { Exc("RefOut", e); }
         try { Check("Params",      T_Params()); }      catch (Exception e) { Exc("Params", e); }
-        // Generics: List<T> + generic method (heavy corlib) - disabled until verified.
-        // try { Check("Generics",    T_Generics()); }    catch (Exception e) { Exc("Generics", e); }
+        try { Check("Generics",    T_Generics()); }    catch (Exception e) { Exc("Generics", e); }
         try { Check("Exceptions",  T_Exceptions()); }  catch (Exception e) { Exc("Exceptions", e); }
         try { Check("ExcRethrow",  T_ExcRethrow()); }  catch (Exception e) { Exc("ExcRethrow", e); }
         try { Check("NullRef",     T_NullRef()); }     catch (Exception e) { Exc("NullRef", e); }

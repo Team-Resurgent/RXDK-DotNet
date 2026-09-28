@@ -25,17 +25,17 @@ today, verified on xemu:
 
 - **JIT enabled (x87 codegen) in the `--interpreter` configuration** — the interpreter needs the JIT
   to compile wrappers/trampolines; it compiles and links, and generates native code.
-- **A managed self-test passes 32/32** on-device (`tests/managed/Test.cs`): **delegates**
-  (`Func<...>` invoked through the native→interp trampoline), integer/long/ulong and **x87
-  float+double** arithmetic, bitops/shifts, arrays + bounds exceptions, foreach, jagged arrays,
-  strings, structs, boxing, static/instance fields, **virtual + interface dispatch**, enums, switch,
-  recursion, ref/out, params, and full **exception handling** (try/catch/finally, rethrow, null-ref,
-  divide-by-zero).
+- **A managed self-test passes 36/36** on-device (`tests/managed/Test.cs`): **delegates**
+  (`Func<...>` via the native→interp trampoline), integer/long/ulong and **x87 float+double**
+  arithmetic, bitops/shifts, arrays + bounds exceptions, foreach, jagged arrays, strings
+  (`Substring`/`ToUpper`/`Split`/`Trim`), `int.Parse`/`int.ToString`, **generics** (`List<T>`),
+  structs, boxing, static/instance fields, **virtual + interface dispatch**, enums, switch, recursion,
+  ref/out, params, and full **exception handling** (try/catch/finally, rethrow, null-ref, div-by-zero).
+  This is a bespoke smoke test, not Mono's official suite.
 
-**Known gaps (follow-ups):** managed `System.Console.WriteLine` hits an exception-construction
-recursion in the Console path (the self-test uses a native `RxdkConsole.Write` sink instead); and some
-globalization/number-formatting corlib methods (`String.ToUpper/Split/Substring`, `int.Parse`,
-`List<T>`) are incomplete. See [`docs/`](docs/).
+**Known gaps (follow-ups):** managed `System.Console.WriteLine` still fails — `Console..cctor`'s
+`Encoding.Default` path NREs deep in corlib (the self-test uses a native `RxdkConsole.Write` sink
+instead). See [`docs/`](docs/).
 
 Build/run: `scripts/build-*.sh` compile the runtime layers, the corlib, and the test assembly, then
 package a bootable XBE/ISO; boot with `xemu -dvd_path <iso> -device lpc47m157 -serial stdio`.
