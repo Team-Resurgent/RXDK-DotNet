@@ -106,6 +106,44 @@ typedef struct _NT_TIB {
 typedef struct _PROCESSOR_NUMBER { unsigned short Group; unsigned char Number; unsigned char Reserved; } PROCESSOR_NUMBER, *PPROCESSOR_NUMBER;
 #endif
 
+/* Win32 constants the SDK omits, needed once HAVE_CLASSIC_WINAPI_SUPPORT enables the real API paths. */
+#ifndef FORMAT_MESSAGE_FROM_SYSTEM
+#define FORMAT_MESSAGE_ALLOCATE_BUFFER 0x00000100
+#define FORMAT_MESSAGE_IGNORE_INSERTS  0x00000200
+#define FORMAT_MESSAGE_FROM_STRING     0x00000400
+#define FORMAT_MESSAGE_FROM_HMODULE    0x00000800
+#define FORMAT_MESSAGE_FROM_SYSTEM     0x00001000
+#define FORMAT_MESSAGE_ARGUMENT_ARRAY  0x00002000
+#endif
+#ifndef MWMO_ALERTABLE
+#define MWMO_WAITALL        0x0001
+#define MWMO_ALERTABLE      0x0002
+#define MWMO_INPUTAVAILABLE 0x0004
+#endif
+#ifndef SEM_FAILCRITICALERRORS
+#define SEM_FAILCRITICALERRORS     0x0001
+#define SEM_NOGPFAULTERRORBOX      0x0002
+#define SEM_NOALIGNMENTFAULTEXCEPT 0x0004
+#define SEM_NOOPENFILEERRORBOX     0x8000
+#endif
+#ifndef FILE_MAP_READ
+#define FILE_MAP_COPY    0x0001
+#define FILE_MAP_WRITE   0x0002
+#define FILE_MAP_READ    0x0004
+#define FILE_MAP_EXECUTE 0x0020
+#endif
+#ifndef MAX_COMPUTERNAME_LENGTH
+#define MAX_COMPUTERNAME_LENGTH 15
+#endif
+#ifndef IMAGE_SUBSYSTEM_WINDOWS_GUI
+#define IMAGE_SUBSYSTEM_WINDOWS_GUI 2
+#define IMAGE_SUBSYSTEM_WINDOWS_CUI 3
+#endif
+#ifndef TEXT
+#define __TEXT(q) L##q
+#define TEXT(q)   __TEXT(q)
+#endif
+
 /* SEH filter return values (exceptions-x86.c) and DLL entry reasons (mini-windows.c). */
 #ifndef EXCEPTION_CONTINUE_SEARCH
 #define EXCEPTION_EXECUTE_HANDLER     1

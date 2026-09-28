@@ -116,3 +116,35 @@ generated from `Consts.cs.in` with the pinned corlib version.
    **managed output on the xemu serial UART.**
 5. Then: broaden the BCL surface, replace stubbed icalls as needed, and start on the actual
    example title.
+
+## Corlib-load bring-up status (2026-09-27) — runtime init runs; corlib open is the last blocker
+
+The host boots, `mono_jit_init` **runs to completion and returns cleanly** (no crash). Everything
+below corlib now works on real-Xbox HLE:
+
+- **Env layer:** `monoeg_g_getenv`/`g_hasenv` overridden to "always unset" (Xbox has no environment)
+  — killed the spurious `DUMP_CROSS_OFFSETS` dump and the misread `MONO_PATH`/`MONO_GC_PARAMS`.
+- **Win32 PAL fully activated:** `HAVE_CLASSIC_WINAPI_SUPPORT=1` (flips all 73 `w32subset.h` gates on
+  so Mono calls the real APIs, not the "unsupported" stubs) + the Win32 constants
+  (`FORMAT_MESSAGE_*`, `MWMO_*`, `SEM_*`, `FILE_MAP_*`, `COINIT_*`, …) + link shims
+  (`CreateSemaphoreW`, `SetErrorMode`, `MsgWaitForMultipleObjectsEx`, dynamic-loading/COM/VEH stubs).
+  The earlier `'CreateSemaphore … not supported'` crash is gone.
+- **corlib built + bundled:** `mscorlib.dll` in the ISO at `D:\assy\`; `mono_set_assemblies_path`
+  points there (and the `g_file_test` warning is non-fatal — assembly.c keeps the path).
+
+**The remaining blocker — RXDK's WIDE (W) Win32 file APIs are broken; Mono (UNICODE) uses them.**
+Verified via an on-device probe: `GetFileAttributesA("D:\assy\mscorlib.dll")` → **FOUND**, but the
+**wide** `GetFileAttributesW` returns INVALID (and `\Device\CdRom0`/`\??\D:` forms are INVALID — the
+drive-letter form via the *A* API is correct). Mono, being a UNICODE build, calls the W variants
+everywhere (`g_file_test`→`GetFileAttributesW`, image open→`CreateFileW`+`CreateFileMappingW`).
+Thunked so far (W→A, loose objects winning `--allow-multiple-definition`): `GetFileAttributesW`,
+`CreateFileW`, `CreateFileMappingW`; also un-deferred `gfile-win32.c` (real `g_file_test`) and moved
+`mono_stubs.o` after the archive group so real symbols win over stubs. corlib load still returns
+NULL silently (Mono's own trace is off because env is disabled / the trace setters appear stubbed).
+
+**Recommended finish — flip Mono to a NON-UNICODE (ANSI) build.** Rather than thunk every wide file
+API (whack-a-mole: `MapViewOfFile*`, `FindFirstFileW`, `GetFullPathNameW`, …), drop `UNICODE`/
+`_UNICODE` from `config.h` so Mono uses the **A** variants that RXDK actually implements. Handle the
+one thing UNICODE was added for (the `WIN32_FIND_DATA` A/W typedef) by providing `WIN32_FIND_DATAW`
+as an alias/type. This is the likely root fix. Secondary: get a working Mono log sink (route
+`g_print`/`mono_trace` to `DbgPrint`) so corlib-load failures are visible without the environment.

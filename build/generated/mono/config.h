@@ -58,6 +58,9 @@
 /* ---- host / target ------------------------------------------------------- */
 #define HOST_WIN32 1
 #define USE_WINDOWS_BACKEND 1   /* Mono's Windows thread backend (adds windows_tib to MonoThreadInfo) */
+/* We are classic desktop Win32 — flips all 73 HAVE_API_SUPPORT_WIN32_* gates (w32subset.h) ON so
+ * Mono calls the real Win32 APIs (CreateSemaphoreW, …) instead of the "unsupported" stubs. */
+#define HAVE_CLASSIC_WINAPI_SUPPORT 1
 #define UNICODE 1               /* Mono is a Unicode build on Windows: generic Win32 A/W macros -> W */
 #define _UNICODE 1
 #define TARGET_WIN32 1

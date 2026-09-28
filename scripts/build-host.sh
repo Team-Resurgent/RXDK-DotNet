@@ -36,12 +36,12 @@ echo "   ok"
 echo "== trial link (unresolved -> warnings, to enumerate the gap) =="
 W() { cygpath -w "$1"; }
 MSYS2_ARG_CONV_EXCL='*' "$CLANG" \
-  "$(W "$OUT/host_main.o")" "$(W "$OUT/win32_supplement.o")" "$(W "$OUT/win_crt_compat.o")" "$(W "$OUT/mono_stubs.o")" "$(W "$OUT/win_cdecl_shims.o")" \
+  "$(W "$OUT/host_main.o")" "$(W "$OUT/win32_supplement.o")" "$(W "$OUT/win_crt_compat.o")" "$(W "$OUT/win_cdecl_shims.o")" \
   -Wl,--start-group \
   "$(W "$LIB/libmini.lib")" "$(W "$LIB/libmonoruntime.lib")" "$(W "$LIB/libmonoutils.lib")" "$(W "$LIB/libeglib.lib")" \
   "$(W "$SDKL/libxapi.lib")" "$(W "$SDKL/libkernel.lib")" "$(W "$SDKL/libc.lib")" "$(W "$SDKL/libcpp.lib")" "$(W "$SDKL/libcompat.lib")" \
   -Wl,--end-group \
-  "$(W "$BUILTINS")" \
+  "$(W "$BUILTINS")" "$(W "$OUT/mono_stubs.o")" \
   -target i686-pc-windows-gnu -march=pentium3 -nostdlib -nostartfiles \
   -Wl,--image-base=0x10000 -fuse-ld=lld -e XapiTitleStartup \
   -Wl,--error-limit=0 -Wl,--allow-multiple-definition \
@@ -60,6 +60,8 @@ if [ -f "$OUT/mono-host.exe" ]; then
   MSYS2_ARG_CONV_EXCL='*' "$T/imagebld.exe" "/in:$(W "$OUT/mono-host.exe")" "/out:$(W "$OUT/mono-host.xbe")" \
     /nologo /stack:262144 /debug /nolibwarn /dontmountud /TESTID:0xffff0002 /TESTNAME:RxdkMonoHost /TESTVERSION:4096 >/dev/null 2>&1
   mkdir -p "$OUT/iso/RxdkMonoHost"; cp "$OUT/mono-host.xbe" "$OUT/iso/RxdkMonoHost/default.xbe"
+  # bundle the managed BCL so mono_jit_init can load it from the DVD (D:\mscorlib.dll)
+  [ -f "$ROOT/build-out/corlib/mscorlib.dll" ] && cp "$ROOT/build-out/corlib/mscorlib.dll" "$OUT/iso/RxdkMonoHost/mscorlib.dll"
   MSYS2_ARG_CONV_EXCL='*' "$T/xdvdfs.exe" pack "$(W "$OUT/iso/RxdkMonoHost")" "$(W "$OUT/RxdkMonoHost.iso")" >/dev/null 2>&1
   echo "packaged -> build-out/obj/host/RxdkMonoHost.iso  (boot: xemu -dvd_path <iso> -device lpc47m157 -serial stdio)"
 fi

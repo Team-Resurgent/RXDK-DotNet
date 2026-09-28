@@ -25,7 +25,7 @@ FLAGS=(
   -include "$GEN/config.h"
   -include "$PAL/rxdk/win_crt_compat.h"
   -I "$GEN" -I "$EGLIB" -I "$SDKI" -I "$PAL" -I "$ROOT/build/generated/compat"
-  -Wno-implicit-function-declaration
+  -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types
 )
 
 # Platform-neutral core + win32 backends. Excluded: *-unix/*-posix/*-aix, gclock-nanosleep,
