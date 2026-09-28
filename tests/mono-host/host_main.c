@@ -34,6 +34,9 @@ extern MonoClass  *mono_class_from_name(MonoImage *image, const char *name_space
 extern MonoMethod *mono_class_get_method_from_name(MonoClass *klass, const char *name, int param_count);
 extern MonoObject *mono_runtime_invoke(MonoMethod *method, void *obj, void **params, MonoObject **exc);
 extern void       *mono_object_unbox(MonoObject *obj);
+extern MonoClass  *mono_object_get_class(MonoObject *obj);
+extern const char *mono_class_get_name(MonoClass *klass);
+extern MonoString *mono_object_to_string(MonoObject *obj, MonoObject **exc);
 /* Managed->native bridge for redirecting managed Console output to the debug serial. */
 extern void  mono_add_internal_call(const char *name, const void *method);
 extern char *mono_string_to_utf8(MonoString *s);
@@ -107,6 +110,78 @@ static void rxdk_run_managed(void)
     rxdk_print_int("RXDK-DotNet: RunAll failures = ", res ? *(int *)mono_object_unbox(res) : -1);
     OutputDebugStringA("RXDK-DotNet: managed self-test complete\n");
 }
+/* Run one official Mono JIT regression assembly (mini-<name>.dll, built by build-minitests.sh).
+ * Each defines `class Tests` with `static int Main(string[])` -> TestDriver.RunTests, returning the
+ * number of failed sub-tests. We pass a null string[] (RunTests handles null args). The per-test
+ * "Regression tests: N ran, M failed" line comes out on serial via managed Console.WriteLine. */
+static int rxdk_run_minitest(const char *name, const char *path)
+{
+    int st = 0;
+    MonoAssembly *asmb;
+    MonoImage *img;
+    MonoClass *klass;
+    MonoMethod *entry;
+    MonoObject *res, *exc = 0;
+    void *arg0 = 0;            /* managed `string[] args = null` */
+    void *params[1];
+    params[0] = &arg0;
+
+    OutputDebugStringA("\nRXDK-DotNet: === mini test: ");
+    OutputDebugStringA(name); OutputDebugStringA(" ===\n");
+    asmb = mono_assembly_open(path, &st);
+    if (!asmb) { OutputDebugStringA("  load FAILED\n"); return -1; }
+    img = mono_assembly_get_image(asmb);
+    klass = mono_class_from_name(img, "", "Tests");
+    if (!klass) { OutputDebugStringA("  class Tests not found\n"); return -1; }
+    entry = mono_class_get_method_from_name(klass, "Main", 1);
+    if (!entry) { OutputDebugStringA("  Main(string[]) not found\n"); return -1; }
+
+    res = mono_runtime_invoke(entry, 0, params, &exc);
+    if (exc) {
+        MonoClass *ec = mono_object_get_class(exc);
+        const char *en = ec ? mono_class_get_name(ec) : 0;
+        MonoObject *sx = 0;
+        MonoString *ss;
+        OutputDebugStringA("  Main threw: ");
+        OutputDebugStringA(en ? en : "(unknown)");
+        OutputDebugStringA("\n");
+        ss = mono_object_to_string(exc, &sx);
+        if (ss && !sx) {
+            char *u = mono_string_to_utf8(ss);
+            if (u) { OutputDebugStringA("  "); OutputDebugStringA(u); OutputDebugStringA("\n"); mono_free(u); }
+        }
+        return -1;
+    }
+    {
+        int failed = res ? *(int *)mono_object_unbox(res) : -1;
+        rxdk_print_int("  failed sub-tests = ", failed);
+        return failed;
+    }
+}
+
+static void rxdk_run_all_minitests(void)
+{
+    static const char *tests[] = {
+        "basic",      "D:\\assy\\mini-basic.dll",
+        "basic-long", "D:\\assy\\mini-basic-long.dll",
+        "basic-float","D:\\assy\\mini-basic-float.dll",
+        "arrays",     "D:\\assy\\mini-arrays.dll",
+        "objects",    "D:\\assy\\mini-objects.dll",
+        "exceptions", "D:\\assy\\mini-exceptions.dll",
+    };
+    int i, n = (int)(sizeof(tests) / sizeof(tests[0])) / 2;
+    int total_failed = 0, files_run = 0, files_err = 0;
+    for (i = 0; i < n; ++i) {
+        int f = rxdk_run_minitest(tests[i * 2], tests[i * 2 + 1]);
+        if (f < 0) files_err++;
+        else { files_run++; total_failed += f; }
+    }
+    OutputDebugStringA("\nRXDK-DotNet: === mini-test summary ===\n");
+    rxdk_print_int("  assemblies run   = ", files_run);
+    rxdk_print_int("  assemblies error = ", files_err);
+    rxdk_print_int("  total failures   = ", total_failed);
+}
+
 static void test_path(const char *p)
 {
     DWORD a = GetFileAttributesA(p);
@@ -163,8 +238,10 @@ void __cdecl main(void)
     OutputDebugStringA(domain ? "RXDK-DotNet: mono_jit_init OK -- corlib loaded!\n"
                               : "RXDK-DotNet: mono_jit_init returned NULL\n");
 
-    if (domain)
+    if (domain) {
         rxdk_run_managed();
+        rxdk_run_all_minitests();
+    }
 
     /* Let the debug UART drain, then hand control back to the dashboard (an Xbox title exits by
      * returning to firmware rather than falling off the end of main). */

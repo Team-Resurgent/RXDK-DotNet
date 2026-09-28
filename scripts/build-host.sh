@@ -68,6 +68,8 @@ if [ -f "$OUT/mono-host.exe" ]; then
     cp "$ROOT/build-out/corlib/mscorlib.dll" "$OUT/iso/RxdkMonoHost/mscorlib.dll"
   fi
   [ -f "$ROOT/build-out/corlib/Test.dll" ] && cp "$ROOT/build-out/corlib/Test.dll" "$OUT/iso/RxdkMonoHost/assy/Test.dll"
+  # official Mono JIT regression tests (scripts/build-minitests.sh -> mini-*.dll), each its own assembly
+  for d in "$ROOT"/build-out/corlib/mini-*.dll; do [ -f "$d" ] && cp "$d" "$OUT/iso/RxdkMonoHost/assy/"; done
   MSYS2_ARG_CONV_EXCL='*' "$T/xdvdfs.exe" pack "$(W "$OUT/iso/RxdkMonoHost")" "$(W "$OUT/RxdkMonoHost.iso")" >/dev/null 2>&1
   echo "packaged -> build-out/obj/host/RxdkMonoHost.iso  (boot: xemu -dvd_path <iso> -device lpc47m157 -serial stdio)"
 fi
