@@ -32,6 +32,10 @@ typedef struct _MonoString MonoString;
 extern MonoImage  *mono_assembly_get_image(MonoAssembly *assembly);
 extern MonoClass  *mono_class_from_name(MonoImage *image, const char *name_space, const char *name);
 extern MonoMethod *mono_class_get_method_from_name(MonoClass *klass, const char *name, int param_count);
+/* Entry-point lookup: the mini tests are EXEs, so we invoke Main via the assembly's entry token
+ * (class name varies: Tests, BuiltinTests, DevirtualizationTests, ...). */
+extern unsigned int mono_image_get_entry_point(MonoImage *image);
+extern MonoMethod  *mono_get_method(MonoImage *image, unsigned int token, MonoClass *klass);
 extern MonoObject *mono_runtime_invoke(MonoMethod *method, void *obj, void **params, MonoObject **exc);
 /* Builds the managed string[] from argv (argv[0] is the program name, argv[1..] become Main's args)
  * and invokes Main, returning its int exit code. Used to pass "--time" to the mini-test driver. */
@@ -122,8 +126,8 @@ static int rxdk_run_minitest(const char *name, const char *path)
     int st = 0;
     MonoAssembly *asmb;
     MonoImage *img;
-    MonoClass *klass;
     MonoMethod *entry;
+    unsigned int tok;
     MonoObject *exc = 0;
     int failed;
     /* argv[0] = program name (skipped by run_main); "--time" enables the driver's per-test timing. */
@@ -134,10 +138,10 @@ static int rxdk_run_minitest(const char *name, const char *path)
     asmb = mono_assembly_open(path, &st);
     if (!asmb) { OutputDebugStringA("  load FAILED\n"); return -1; }
     img = mono_assembly_get_image(asmb);
-    klass = mono_class_from_name(img, "", "Tests");
-    if (!klass) { OutputDebugStringA("  class Tests not found\n"); return -1; }
-    entry = mono_class_get_method_from_name(klass, "Main", 1);
-    if (!entry) { OutputDebugStringA("  Main(string[]) not found\n"); return -1; }
+    tok = mono_image_get_entry_point(img);
+    if (!tok) { OutputDebugStringA("  no entry point\n"); return -1; }
+    entry = mono_get_method(img, tok, 0);
+    if (!entry) { OutputDebugStringA("  entry method not found\n"); return -1; }
 
     failed = mono_runtime_run_main(entry, 2, argv, &exc);
     if (exc) {
@@ -162,12 +166,15 @@ static int rxdk_run_minitest(const char *name, const char *path)
 static void rxdk_run_all_minitests(void)
 {
     static const char *tests[] = {
-        "basic",      "D:\\assy\\mini-basic.dll",
-        "basic-long", "D:\\assy\\mini-basic-long.dll",
-        "basic-float","D:\\assy\\mini-basic-float.dll",
-        "arrays",     "D:\\assy\\mini-arrays.dll",
-        "objects",    "D:\\assy\\mini-objects.dll",
-        "exceptions", "D:\\assy\\mini-exceptions.dll",
+        "basic",           "D:\\assy\\mini-basic.dll",
+        "basic-long",      "D:\\assy\\mini-basic-long.dll",
+        "basic-float",     "D:\\assy\\mini-basic-float.dll",
+        "basic-math",      "D:\\assy\\mini-basic-math.dll",
+        "arrays",          "D:\\assy\\mini-arrays.dll",
+        "objects",         "D:\\assy\\mini-objects.dll",
+        "exceptions",      "D:\\assy\\mini-exceptions.dll",
+        "builtin-types",   "D:\\assy\\mini-builtin-types.dll",
+        "devirtualization","D:\\assy\\mini-devirtualization.dll",
     };
     int i, n = (int)(sizeof(tests) / sizeof(tests[0])) / 2;
     int total_failed = 0, files_run = 0, files_err = 0;

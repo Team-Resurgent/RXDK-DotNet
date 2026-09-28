@@ -17,9 +17,9 @@ DRIVER="$MINI/TestDriver.cs"
 [ -f "$CORLIB" ] || { echo "ERROR: $CORLIB not found — build corlib first"; exit 1; }
 
 # Curated set, ordered easiest-first. basic (int arith/control flow), basic-long (int64),
-# basic-float (x87), arrays, objects (OOP/valuetypes), exceptions. (generics.cs needs System.Linq,
-# which isn't in our corlib subset yet — deferred.) Add more as they pass.
-TESTS="${*:-basic basic-long basic-float arrays objects exceptions}"
+# basic-float (x87), basic-math, arrays, objects (OOP/valuetypes), exceptions, builtin-types,
+# devirtualization. generics.cs additionally needs System.Core.dll (Linq) + generics-variant-types.dll.
+TESTS="${*:-basic basic-long basic-float basic-math arrays objects exceptions builtin-types devirtualization generics}"
 
 ok=0; bad=0; failed=()
 for t in $TESTS; do
