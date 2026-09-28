@@ -33,13 +33,13 @@ today, verified on xemu:
   enums, switch, recursion, ref/out, params, and full **exception handling** (try/catch/finally,
   rethrow, null-ref, div-by-zero).
 
-- **Mono's own JIT regression suite runs on-device — 709/711, 0 unexpected failures.** The upstream
-  tests from [`mono/mini/*.cs`](vendor/mono/mono/mini) are built with Roslyn against our `mscorlib`
-  and driven by the host through the **unmodified** upstream `TestDriver.cs` (reflection +
-  `MethodInfo.Invoke`, run with `--time`): `basic` 134, `basic-long` 97, `basic-float` (x87) 58,
-  `basic-math` 27, `arrays` 36, `objects` 105, `exceptions` 85, `devirtualization` 6, `generics` 79 —
-  all pass; `builtin-types` 82/84 (2 `nfloat` edge cases). `generics` needs a minimal **System.Core**
-  (LINQ-to-objects, [`scripts/build-syscore.sh`](scripts/build-syscore.sh)). See
+- **Mono's own JIT regression suite runs on-device — 711/711, 0 failures.** The upstream tests from
+  [`mono/mini/*.cs`](vendor/mono/mono/mini) are built with Roslyn against our `mscorlib` and driven
+  by the host through the **unmodified** upstream `TestDriver.cs` (reflection + `MethodInfo.Invoke`,
+  run with `--time`): `basic` 134, `basic-long` 97, `basic-float` (x87) 58, `basic-math` 27,
+  `arrays` 36, `objects` 105, `exceptions` 85, `builtin-types` 84, `devirtualization` 6,
+  `generics` 79. `generics` needs a minimal **System.Core** (LINQ-to-objects,
+  [`scripts/build-syscore.sh`](scripts/build-syscore.sh)). See
   [`scripts/build-minitests.sh`](scripts/build-minitests.sh).
 
 - **`DateTime.Now` / `TimeZoneInfo` work** — the local offset comes from the Xbox EEPROM time zone
