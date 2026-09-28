@@ -70,6 +70,10 @@ if [ -f "$OUT/mono-host.exe" ]; then
   [ -f "$ROOT/build-out/corlib/Test.dll" ] && cp "$ROOT/build-out/corlib/Test.dll" "$OUT/iso/RxdkMonoHost/assy/Test.dll"
   # official Mono JIT regression tests (scripts/build-minitests.sh -> mini-*.dll), each its own assembly
   for d in "$ROOT"/build-out/corlib/mini-*.dll; do [ -f "$d" ] && cp "$d" "$OUT/iso/RxdkMonoHost/assy/"; done
+  # extra managed assemblies some mini tests reference (System.Core = Linq; generics-variant-types)
+  for d in System.Core generics-variant-types; do
+    [ -f "$ROOT/build-out/corlib/$d.dll" ] && cp "$ROOT/build-out/corlib/$d.dll" "$OUT/iso/RxdkMonoHost/assy/"
+  done
   MSYS2_ARG_CONV_EXCL='*' "$T/xdvdfs.exe" pack "$(W "$OUT/iso/RxdkMonoHost")" "$(W "$OUT/RxdkMonoHost.iso")" >/dev/null 2>&1
   echo "packaged -> build-out/obj/host/RxdkMonoHost.iso  (boot: xemu -dvd_path <iso> -device lpc47m157 -serial stdio)"
 fi

@@ -175,6 +175,7 @@ static void rxdk_run_all_minitests(void)
         "exceptions",      "D:\\assy\\mini-exceptions.dll",
         "builtin-types",   "D:\\assy\\mini-builtin-types.dll",
         "devirtualization","D:\\assy\\mini-devirtualization.dll",
+        "generics",        "D:\\assy\\mini-generics.dll",
     };
     int i, n = (int)(sizeof(tests) / sizeof(tests[0])) / 2;
     int total_failed = 0, files_run = 0, files_err = 0;

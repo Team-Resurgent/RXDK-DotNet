@@ -21,6 +21,18 @@ DRIVER="$MINI/TestDriver.cs"
 # devirtualization. generics.cs additionally needs System.Core.dll (Linq) + generics-variant-types.dll.
 TESTS="${*:-basic basic-long basic-float basic-math arrays objects exceptions builtin-types devirtualization generics}"
 
+# generics.cs needs System.Core.dll (Linq) + generics-variant-types.dll (variant interfaces the IL
+# helper defines; we build the C# equivalent since the RXDK toolchain ships no ilasm).
+if echo "$TESTS" | grep -qw generics; then
+  [ -f "$OUT/System.Core.dll" ] || bash "$ROOT/scripts/build-syscore.sh" >/dev/null 2>&1
+  VARSRC="$ROOT/build/managed/generics-variant-types.cs"
+  VARDLL="$OUT/generics-variant-types.dll"
+  MSYS2_ARG_CONV_EXCL='*' dotnet exec "$(cygpath -w "$CSC")" -nostdlib -noconfig -target:library \
+    -out:"$(cygpath -w "$VARDLL")" -reference:"$(cygpath -w "$CORLIB")" "$(cygpath -w "$VARSRC")" \
+    > "$OUT/generics-variant-types.log" 2>&1 && echo "  OK   generics-variant-types.dll" \
+    || { echo "  FAIL generics-variant-types.dll"; grep -iE 'error CS' "$OUT/generics-variant-types.log" | head; }
+fi
+
 ok=0; bad=0; failed=()
 for t in $TESTS; do
   SRC="$MINI/$t.cs"
@@ -31,6 +43,10 @@ for t in $TESTS; do
     echo "-unsafe"
     echo "-out:$(cygpath -w "$OUT/mini-$t.dll")"
     echo "-reference:$(cygpath -w "$CORLIB")"
+    if [ "$t" = generics ]; then
+      echo "-reference:$(cygpath -w "$OUT/System.Core.dll")"
+      echo "-reference:$(cygpath -w "$OUT/generics-variant-types.dll")"
+    fi
     echo "$(cygpath -w "$DRIVER")"
     echo "$(cygpath -w "$SRC")"
   } > "$RSP"
