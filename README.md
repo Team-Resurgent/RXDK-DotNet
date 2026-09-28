@@ -25,15 +25,16 @@ today, verified on xemu:
 
 - **JIT enabled (x87 codegen) in the `--interpreter` configuration** — the interpreter needs the JIT
   to compile wrappers/trampolines; it compiles and links, and generates native code.
-- **A managed self-test passes 30/30** on-device (`tests/managed/Test.cs`): integer/long/ulong and
-  **x87 float+double** arithmetic, bitops/shifts, arrays + bounds exceptions, foreach, jagged arrays,
+- **A managed self-test passes 32/32** on-device (`tests/managed/Test.cs`): **delegates**
+  (`Func<...>` invoked through the native→interp trampoline), integer/long/ulong and **x87
+  float+double** arithmetic, bitops/shifts, arrays + bounds exceptions, foreach, jagged arrays,
   strings, structs, boxing, static/instance fields, **virtual + interface dispatch**, enums, switch,
   recursion, ref/out, params, and full **exception handling** (try/catch/finally, rethrow, null-ref,
   divide-by-zero).
 
-**Known gaps (follow-ups):** the native→interp (`interp_in`) trampoline path used by delegates
-stack-overflows, so delegate invocation and managed `Console` output are disabled in the self-test;
-and some globalization/number-formatting corlib methods (`String.ToUpper/Split`, `int.Parse`,
+**Known gaps (follow-ups):** managed `System.Console.WriteLine` hits an exception-construction
+recursion in the Console path (the self-test uses a native `RxdkConsole.Write` sink instead); and some
+globalization/number-formatting corlib methods (`String.ToUpper/Split/Substring`, `int.Parse`,
 `List<T>`) are incomplete. See [`docs/`](docs/).
 
 Build/run: `scripts/build-*.sh` compile the runtime layers, the corlib, and the test assembly, then

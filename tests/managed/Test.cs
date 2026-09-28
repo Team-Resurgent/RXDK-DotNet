@@ -59,6 +59,11 @@ public static class RxdkTest
     }
 
     // ---- individual feature tests (each returns bool) ---------------------------------------
+    static int DAdd(int a, int b) { return a + b; }
+    static bool T_Delegate() { Func<int,int,int> f = DAdd; return f(20, 22) == 42; }
+    static bool DTrue() { return true; }
+    static bool T_DelegateBool() { Func<bool> f = DTrue; return f(); }
+
     static bool T_IntArith()  { return 7 * 6 == 42 && 100 / 7 == 14 && 100 % 7 == 2 && (3 - 9) == -6; }
     static bool T_Unchecked() { unchecked { int x = int.MaxValue; return x + 1 == int.MinValue; } }
     static bool T_Long()      { long a = 1L << 40; long b = 1000000L * 1000000L; return a == 1099511627776L && b == 1000000000000L; }
@@ -192,15 +197,15 @@ public static class RxdkTest
     }
 
     // ---- runner -----------------------------------------------------------------------------
-    // NOTE: called directly (no Func<bool> delegates) so the interpreter never needs a native->interp
-    // (interp_in) trampoline for the harness itself. Delegate invocation is exercised separately by
-    // the Delegates test below.
+    // Output via the raw RxdkConsole.Write sink (managed System.Console.WriteLine still hits an
+    // exception-construction recursion in the Console path - a corlib gap, tracked separately).
+    // Delegates DO work now (Delegate/DelegateBool below invoke through the native->interp trampoline).
     public static int RunAll()
     {
         RxdkConsole.Write("=== RXDK-DotNet managed self-test (raw sink) ===\n");
         passed = 0; failed = 0;
-        // Inline try/catch per test (no Func<bool> delegates: the native->interp trampoline path
-        // currently stack-overflows, so the harness avoids it and reports each result independently).
+        try { Check("Delegate",     T_Delegate()); }     catch (Exception e) { Exc("Delegate", e); }
+        try { Check("DelegateBool", T_DelegateBool()); } catch (Exception e) { Exc("DelegateBool", e); }
         try { Check("IntArith",    T_IntArith()); }    catch (Exception e) { Exc("IntArith", e); }
         try { Check("Unchecked",   T_Unchecked()); }   catch (Exception e) { Exc("Unchecked", e); }
         try { Check("Long",        T_Long()); }        catch (Exception e) { Exc("Long", e); }
