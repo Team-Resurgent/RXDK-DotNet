@@ -31,7 +31,13 @@ today, verified on xemu:
   foreach, jagged arrays, strings (`Substring`/`ToUpper`/`Split`/`Trim`), `int.Parse`/`int.ToString`,
   **generics** (`List<T>`), structs, boxing, static/instance fields, **virtual + interface dispatch**,
   enums, switch, recursion, ref/out, params, and full **exception handling** (try/catch/finally,
-  rethrow, null-ref, div-by-zero). This is a bespoke smoke test, not Mono's official suite.
+  rethrow, null-ref, div-by-zero).
+
+- **Mono's own JIT regression suite runs on-device — 515/515, 0 failures.** The upstream tests from
+  [`mono/mini/*.cs`](vendor/mono/mono/mini) are built with Roslyn against our `mscorlib` and driven
+  by the host through reflection (`TestDriver.RunTests` → `MethodInfo.Invoke`):
+  `basic` 134, `basic-long` 97, `basic-float` (x87) 58, `arrays` 36, `objects` 105, `exceptions` 85.
+  The `test_<N>_<name>` methods are unmodified upstream; see [`scripts/build-minitests.sh`](scripts/build-minitests.sh).
 
 Build/run: `scripts/build-*.sh` compile the runtime layers, the corlib, and the test assembly, then
 package a bootable XBE/ISO; boot with `xemu -dvd_path <iso> -device lpc47m157 -serial stdio`.
