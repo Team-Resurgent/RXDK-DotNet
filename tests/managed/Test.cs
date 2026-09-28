@@ -123,6 +123,9 @@ public static class RxdkTest
                "one".StartsWith("o") == true  && "".StartsWith("T") == false;
     }
     static bool T_IntToString() { return 42.ToString() == "42" && (-7).ToString() == "-7"; }
+    // float/double formatting via corefx Number.Windows DoubleToNumber -> _ecvt_s (win_crt_compat.c)
+    static bool T_FloatToString() { return (1337.0f).ToString() == "1337" && (-1337.0f).ToString() == "-1337" &&
+                                           (10.0).ToString() == "10" && (0.0).ToString() == "0" && (3.5).ToString() == "3.5"; }
     static bool T_Parse()       { return int.Parse("123") == 123; }
 
     struct Point { public int X, Y; public int Sum() { return X + Y; } }
@@ -242,6 +245,7 @@ public static class RxdkTest
         try { Check("StringApi",   T_StringApi()); }   catch (Exception e) { Exc("StringApi", e); }
         try { Check("StartsWith",  T_StartsWith()); }  catch (Exception e) { Exc("StartsWith", e); }
         try { Check("IntToString", T_IntToString()); } catch (Exception e) { Exc("IntToString", e); }
+        try { Check("FloatToString", T_FloatToString()); } catch (Exception e) { Exc("FloatToString", e); }
         try { Check("Parse",       T_Parse()); }       catch (Exception e) { Exc("Parse", e); }
         try { Check("Struct",      T_Struct()); }      catch (Exception e) { Exc("Struct", e); }
         try { Check("Box",         T_Box()); }         catch (Exception e) { Exc("Box", e); }

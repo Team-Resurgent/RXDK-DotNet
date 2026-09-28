@@ -47,6 +47,9 @@ for t in $TESTS; do
       echo "-reference:$(cygpath -w "$OUT/System.Core.dll")"
       echo "-reference:$(cygpath -w "$OUT/generics-variant-types.dll")"
     fi
+    # builtin-types selects nint/nuint/nfloat storage size by ARCH_<bits>; upstream Makefile passes
+    # -define:ARCH_$((8*SIZEOF_VOID_P)). We target i686 (4-byte pointers) -> ARCH_32 (nfloat = Single).
+    [ "$t" = builtin-types ] && echo "-define:ARCH_32"
     echo "$(cygpath -w "$DRIVER")"
     echo "$(cygpath -w "$SRC")"
   } > "$RSP"
