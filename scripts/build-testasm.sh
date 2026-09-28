@@ -4,12 +4,21 @@
 # bundled onto the DVD next to mscorlib so the interpreter can load and run it.
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CSC="/c/Program Files/dotnet/sdk/10.0.400/Roslyn/bincore/csc.dll"
+source "$ROOT/scripts/toolchain.sh"
 OUT="$ROOT/build-out/corlib"
 SRC="$ROOT/tests/managed/Test.cs"
 CORLIB="$OUT/mscorlib.dll"
 
 [ -f "$CORLIB" ] || { echo "ERROR: $CORLIB not found — build corlib first"; exit 1; }
+
+# Minimal System.dll: SocketAddress (the native socket code loads "System.dll" by name) and a
+# UDP loopback helper whose methods are the real Socket icalls.
+SYS="$OUT/System.dll"
+MSYS2_ARG_CONV_EXCL='*' dotnet exec "$(cygpath -w "$CSC")" -nostdlib -noconfig -target:library -unsafe -optimize+ \
+  -out:"$(cygpath -w "$SYS")" -reference:"$(cygpath -w "$CORLIB")" \
+  "$(cygpath -w "$ROOT/tests/managed/SystemNet.cs")" > "$OUT/system.log" 2>&1 \
+  || { echo "System.dll FAILED"; grep -iE 'error' "$OUT/system.log" | head; exit 1; }
+echo "System.dll: $(stat -c%s "$SYS" 2>/dev/null) bytes"
 
 RSP="$OUT/testasm.rsp"
 {
@@ -17,9 +26,13 @@ RSP="$OUT/testasm.rsp"
   echo "-noconfig"
   echo "-target:library"
   echo "-optimize+"
+  echo "-unsafe"
   echo "-out:$(cygpath -w "$OUT/Test.dll")"
   echo "-reference:$(cygpath -w "$CORLIB")"
+  echo "-reference:$(cygpath -w "$OUT/System.dll")"
   echo "$(cygpath -w "$SRC")"
+  echo "$(cygpath -w "$ROOT/tests/managed/CompressionExtras.cs")"
+  echo "$(cygpath -w "$ROOT/vendor/mono/mcs/class/System/System.IO.Compression/DeflateStream.cs")"
 } > "$RSP"
 
 echo "== compiling Test.dll with Roslyn =="

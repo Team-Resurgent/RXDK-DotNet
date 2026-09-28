@@ -5,7 +5,7 @@
 # the heavy System.Linq.Expressions/DLR that full System.Core pulls in. Output: build-out/corlib/System.Core.dll.
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CSC="/c/Program Files/dotnet/sdk/10.0.400/Roslyn/bincore/csc.dll"
+source "$ROOT/scripts/toolchain.sh"
 OUT="$ROOT/build-out/corlib"; mkdir -p "$OUT"
 CORLIB="$OUT/mscorlib.dll"
 LINQ="$ROOT/vendor/mono/external/corefx/src/System.Linq/src/System/Linq"

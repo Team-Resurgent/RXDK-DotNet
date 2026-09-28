@@ -66,10 +66,10 @@ static void copy_find(const RXDK_FIND_A *s, RXDK_FIND_W *d)
 HANDLE CreateFileW(const WCHAR *name, DWORD access, DWORD share, void *sa, DWORD disp, DWORD flags, void *tmpl)
 { char a[520]; w2a(name, a, 520); return CreateFileA(a, access, share, sa, disp, flags, tmpl); }
 
-/* Directory enumeration: libxapi's FindFirstFile(A) is broken on the Xbox (it faults) — the kernel
- * enumerates via NtQueryDirectoryFile, which corefx also targets but we haven't wired. Fail cleanly
- * (ERROR_FILE_NOT_FOUND, no results) instead of crashing. Directory.GetFiles/EnumerateFiles is a
- * known follow-up (needs NtQueryDirectoryFile). */
+/* Directory enumeration: libxapi's FindFirstFile(A) faults on the Xbox. corefx Directory.GetFiles
+ * does not use it — it opens the directory with CreateFile (FILE_FLAG_BACKUP_SEMANTICS) and pages
+ * entries with ntdll!NtQueryDirectoryFile. These FindFirst/FindNext thunks stay a clean failure for
+ * the few Mono w32file callers that still hit them. */
 #define RXDK_ERROR_NO_MORE_FILES 18
 #define RXDK_ERROR_FILE_NOT_FOUND 2
 HANDLE FindFirstFileW(const WCHAR *pattern, RXDK_FIND_W *wfd)
@@ -86,8 +86,9 @@ BOOL CopyFileW(const WCHAR *src, const WCHAR *dst, BOOL failIfExists)
 { char a[520], b[520]; w2a(src, a, 520); w2a(dst, b, 520); return CopyFileA(a, b, failIfExists); }
 BOOL SetFileAttributesW(const WCHAR *name, DWORD attrs) { char a[520]; w2a(name, a, 520); return SetFileAttributesA(a, attrs); }
 /* libxapi's GetFileAttributesExA faults on the Xbox; GetFileAttributesA works. Build the
- * WIN32_FILE_ATTRIBUTE_DATA ([0]=attrs, [1..6]=3 FILETIMEs, [7]=sizeHigh, [8]=sizeLow) from attrs,
- * opening the file for its size when it isn't a directory. Times are left zero (rarely used). */
+ * WIN32_FILE_ATTRIBUTE_DATA ([0]=attrs, [1..6]=3 FILETIMEs, [7]=sizeHigh, [8]=sizeLow) from attrs.
+ * Non-directories get their size from GetFileSize on a normal read open (the same open FileStream
+ * already uses). Times stay zero. */
 BOOL GetFileAttributesExW(const WCHAR *name, int level, void *info)
 {
     char a[520]; DWORD attrs; DWORD *d = (DWORD *)info; (void)level;
@@ -95,7 +96,16 @@ BOOL GetFileAttributesExW(const WCHAR *name, int level, void *info)
     attrs = GetFileAttributesA(a);
     if (attrs == 0xFFFFFFFFu) { SetLastError(2 /*ERROR_FILE_NOT_FOUND*/); return 0; }
     for (int i = 0; i < 9; ++i) d[i] = 0;
-    d[0] = attrs;   /* size/times left 0 for now (File.Exists needs only attrs) */
+    d[0] = attrs;
+    if ((attrs & 0x10u) == 0) { /* not a directory — FileInfo.Length reads sizeHigh/sizeLow */
+        HANDLE h = CreateFileA(a, 0x80000000u /*GENERIC_READ*/, 1 /*FILE_SHARE_READ*/, 0,
+                               3 /*OPEN_EXISTING*/, 0x80 /*FILE_ATTRIBUTE_NORMAL*/, 0);
+        if (h != RXDK_INVALID_HANDLE) {
+            DWORD hi = 0, lo = GetFileSize(h, &hi);
+            if (lo != 0xFFFFFFFFu) { d[7] = hi; d[8] = lo; }
+            CloseHandle(h);
+        }
+    }
     return 1;
 }
 BOOL GetDiskFreeSpaceExW(const WCHAR *dir, void *avail, void *total, void *free_)
@@ -136,8 +146,8 @@ BOOL   CancelIoEx(HANDLE h, void *ovl) { (void)h; (void)ovl; return 1; }
  * win32_supplement.c). These are cdecl on purpose: for its SetLastError=true DllImports the mono
  * pinvoke wrapper on this build cleans the args itself (caller-cleanup), so a stdcall callee double-
  * cleans the stack and corrupts the return (observed as a jump to IP=1). They wrap the cdecl W->A
- * thunks / real libxapi handle-ops above. Directory enumeration additionally uses ntdll
- * NtQueryDirectoryFile, which is not wired yet — Directory.GetFiles is a known follow-up. */
+ * thunks / real libxapi handle-ops above. ntdll NtQueryDirectoryFile / NtCreateFile have no
+ * SetLastError, so their wrappers below are stdcall (Winapi), matching GetTimeZoneInformation. */
 extern BOOL   __attribute__((__stdcall__)) MoveFileExA(const char*, const char*, DWORD);
 extern BOOL   __attribute__((__stdcall__)) CopyFileA(const char*, const char*, BOOL);
 extern BOOL   __attribute__((__stdcall__)) SetEndOfFile(HANDLE);
@@ -147,7 +157,240 @@ extern BOOL   __attribute__((__stdcall__)) WriteFile(HANDLE, const void*, DWORD,
 extern DWORD  __attribute__((__stdcall__)) SetFilePointer(HANDLE, long, long*, DWORD);
 
 DWORD  sc_GetFileAttributesExW(const WCHAR *n, int lvl, void *info) { return GetFileAttributesExW(n, lvl, info); }
-HANDLE sc_CreateFileW(const WCHAR *n, DWORD a, DWORD s, void *sa, DWORD d, DWORD f, void *t) { return CreateFileW(n, a, s, sa, d, f, t); }
+
+/* -------------------------------------------------------------------------------------------------
+ * ntdll directory enumeration.
+ *
+ * corefx FileSystemEnumerator opens a directory with CreateFileW(FILE_FLAG_BACKUP_SEMANTICS), then
+ * pages FILE_FULL_DIR_INFORMATION via NtQueryDirectoryFile. The Xbox kernel exports that call, but
+ * its signature drops Windows' ReturnSingleEntry argument and takes an ANSI OBJECT_STRING filter.
+ * NtCreateFile likewise uses the Xbox OBJECT_ATTRIBUTES (Root, ANSI name, Attributes) and has no
+ * EaBuffer/EaLength. These wrappers speak the Windows signatures corefx P/Invokes and call the
+ * kernel with the Xbox ones. They are stdcall: the DllImports do not set SetLastError.
+ */
+typedef struct { unsigned long Status; unsigned long Information; } RXDK_IOSB;
+typedef struct { unsigned long Length; void *RootDirectory; void *ObjectName; unsigned long Attributes; void *Sd; void *Qos; } RXDK_WIN_OA;
+typedef struct { unsigned short Length; unsigned short MaximumLength; WCHAR *Buffer; } RXDK_WIN_USTR;
+typedef struct { unsigned short Length; unsigned short MaximumLength; char *Buffer; } RXDK_ANSI;
+typedef struct { void *RootDirectory; RXDK_ANSI *ObjectName; unsigned long Attributes; } RXDK_XBOX_OA;
+
+extern long __attribute__((__stdcall__)) NtQueryDirectoryFile(void*, void*, void*, void*, RXDK_IOSB*, void*, unsigned long, int, void*, int);
+extern long __attribute__((__stdcall__)) NtCreateFile(void**, unsigned long, RXDK_XBOX_OA*, RXDK_IOSB*, void*, unsigned long, unsigned long, unsigned long, unsigned long);
+extern unsigned long __attribute__((__stdcall__)) RtlNtStatusToDosError(long status);
+extern void *malloc(unsigned int);
+extern void  free(void *);
+
+/* corefx Marshal.AllocHGlobal -> HeapAlloc(GetProcessHeap()). The import is
+ * api-ms-win-core-heap, which the Xbox has no loader for; a NULL HeapAlloc becomes
+ * OutOfMemoryException before enumeration ever calls NtQueryDirectoryFile. */
+static void *rxdk_process_heap = (void *)0x48454150;
+void *__attribute__((__stdcall__)) sc_GetProcessHeap(void) { return rxdk_process_heap; }
+void *__attribute__((__stdcall__)) sc_HeapAlloc(void *heap, unsigned long flags, unsigned long bytes)
+{
+    void *p;
+    (void)heap;
+    if (bytes == 0) bytes = 1;
+    p = malloc(bytes);
+    if (p && (flags & 8u)) { unsigned long i; char *c = (char *)p; for (i = 0; i < bytes; ++i) c[i] = 0; }
+    return p;
+}
+int __attribute__((__stdcall__)) sc_HeapFree(void *heap, unsigned long flags, void *mem)
+{
+    (void)heap; (void)flags;
+    free(mem);
+    return 1;
+}
+
+#define RXDK_FILE_FLAG_BACKUP_SEMANTICS 0x02000000u
+#define RXDK_SYNCHRONIZE                0x00100000u
+#define RXDK_FILE_OPEN                  1
+#define RXDK_FILE_CREATE                2
+#define RXDK_FILE_OPEN_IF               3
+#define RXDK_FILE_OVERWRITE             4
+#define RXDK_FILE_OVERWRITE_IF          5
+#define RXDK_FILE_DIRECTORY_FILE        0x00000001u
+#define RXDK_FILE_SYNCHRONOUS_IO_NONALERT 0x00000020u
+#define RXDK_FILE_OPEN_FOR_BACKUP_INTENT  0x00004000u
+#define RXDK_OBJ_CASE_INSENSITIVE       0x00000040u
+#define RXDK_STATUS_SUCCESS             0
+
+static int win32_to_nt_disp(DWORD disp)
+{
+    switch (disp) {
+    case 1: return RXDK_FILE_CREATE;       /* CREATE_NEW */
+    case 2: return RXDK_FILE_OVERWRITE_IF; /* CREATE_ALWAYS */
+    case 4: return RXDK_FILE_OPEN_IF;      /* OPEN_ALWAYS */
+    case 5: return RXDK_FILE_OVERWRITE;    /* TRUNCATE_EXISTING */
+    default: return RXDK_FILE_OPEN;        /* OPEN_EXISTING */
+    }
+}
+
+/* D:\foo -> \??\D:\foo. NT paths (\??\ or \Device\) pass through. */
+static void to_nt_path(const char *win, char *out, int n)
+{
+    int i = 0, j;
+    if (!win) { if (n > 0) out[0] = 0; return; }
+    if (win[0] == '\\') {
+        for (; i < n - 1 && win[i]; ++i) out[i] = win[i];
+        out[i] = 0;
+        return;
+    }
+    if (n > 4) { out[0] = '\\'; out[1] = '?'; out[2] = '?'; out[3] = '\\'; i = 4; }
+    for (j = 0; i < n - 1 && win[j]; ++j, ++i) out[i] = win[j];
+    out[i] = 0;
+}
+
+/* Open a directory the kernel way. CreateFileA does not accept FILE_FLAG_BACKUP_SEMANTICS. */
+static HANDLE rxdk_open_directory(const WCHAR *name, DWORD access, DWORD share, DWORD disp)
+{
+    char win[520], nt[520];
+    RXDK_ANSI as;
+    RXDK_XBOX_OA oa;
+    RXDK_IOSB iosb;
+    void *h = 0;
+    long st;
+    int i;
+    w2a(name, win, 520);
+    to_nt_path(win, nt, 520);
+    for (i = 0; nt[i]; ++i) {}
+    as.Length = (unsigned short)i;
+    as.MaximumLength = (unsigned short)(i + 1);
+    as.Buffer = nt;
+    oa.RootDirectory = 0;
+    oa.ObjectName = &as;
+    oa.Attributes = RXDK_OBJ_CASE_INSENSITIVE;
+    iosb.Status = 0; iosb.Information = 0;
+    st = NtCreateFile(&h, access | RXDK_SYNCHRONIZE, &oa, &iosb, 0, 0, share,
+                      (unsigned long)win32_to_nt_disp(disp),
+                      RXDK_FILE_DIRECTORY_FILE | RXDK_FILE_SYNCHRONOUS_IO_NONALERT | RXDK_FILE_OPEN_FOR_BACKUP_INTENT);
+    if (st != RXDK_STATUS_SUCCESS || !h) {
+        SetLastError(RtlNtStatusToDosError(st));
+        return RXDK_INVALID_HANDLE;
+    }
+    return h;
+}
+
+HANDLE sc_CreateFileW(const WCHAR *n, DWORD a, DWORD s, void *sa, DWORD d, DWORD f, void *t)
+{
+    if (f & RXDK_FILE_FLAG_BACKUP_SEMANTICS)
+        return rxdk_open_directory(n, a, s, d);
+    return CreateFileW(n, a, s, sa, d, f, t);
+}
+
+/* Windows NtQueryDirectoryFile has a ReturnSingleEntry argument the Xbox kernel does not.
+ * corefx passes FileName == NULL (it filters in managed code), so the ANSI filter stays NULL. */
+#define RXDK_STATUS_NO_MORE_FILES  ((long)0x80000006)
+#define RXDK_STATUS_BUFFER_OVERFLOW ((long)0x80000005)
+#define RXDK_STATUS_NO_MEMORY       ((long)0xC0000017)
+#define RXDK_FILE_DIRECTORY_INFORMATION 1
+#define RXDK_FILE_FULL_DIR_INFORMATION  2
+
+/* FileFullDirectoryInformation (class 2) is STATUS_INVALID_INFO_CLASS on the Xbox. The kernel
+ * enumerates with FileDirectoryInformation (class 1, ANSI names, no EaSize). corefx only understands
+ * the wide FILE_FULL_DIR_INFORMATION layout, so expand class 1 into that buffer. */
+static long rxdk_query_directory_full(void *file, void *event, void *apc, void *ctx,
+    RXDK_IOSB *iosb, unsigned char *dst, unsigned long len, int restart)
+{
+    unsigned long klen = len / 3;
+    unsigned char *tmp, *src, *out, *end, *last;
+    long st;
+    unsigned long written = 0;
+    if (klen < 256) klen = len;
+    tmp = (unsigned char *)malloc(klen ? klen : 1);
+    if (!tmp) return RXDK_STATUS_NO_MEMORY;
+    st = NtQueryDirectoryFile(file, event, apc, ctx, iosb, tmp, klen, RXDK_FILE_DIRECTORY_INFORMATION, 0, restart);
+    if (st == RXDK_STATUS_BUFFER_OVERFLOW && klen < len) {
+        free(tmp);
+        klen = len;
+        tmp = (unsigned char *)malloc(klen);
+        if (!tmp) return RXDK_STATUS_NO_MEMORY;
+        st = NtQueryDirectoryFile(file, event, apc, ctx, iosb, tmp, klen, RXDK_FILE_DIRECTORY_INFORMATION, 0, restart);
+    }
+    if (st != RXDK_STATUS_SUCCESS) { free(tmp); return st; }
+    src = tmp;
+    out = dst;
+    end = dst + len;
+    last = 0;
+    for (;;) {
+        unsigned long next, nameLen, need, aligned, i;
+        if (src + 64 > tmp + klen) break;
+        next = *(unsigned long *)src;
+        nameLen = *(unsigned long *)(src + 60);
+        if (nameLen > 260 || src + 64 + nameLen > tmp + klen) break;
+        need = 68 + nameLen * 2;
+        aligned = (need + 7u) & ~7u;
+        if (out + need > end) break;
+        for (i = 0; i < 60; ++i) out[i] = src[i];
+        *(unsigned long *)(out + 60) = nameLen * 2; /* FileNameLength, wide bytes */
+        *(unsigned long *)(out + 64) = 0;           /* EaSize */
+        for (i = 0; i < nameLen; ++i) { out[68 + i * 2] = src[64 + i]; out[68 + i * 2 + 1] = 0; }
+        for (i = need; i < aligned && out + i < end; ++i) out[i] = 0;
+        *(unsigned long *)out = (out + aligned <= end) ? aligned : 0;
+        last = out;
+        written += (out + aligned <= end) ? aligned : need;
+        if (next == 0 || src + next < src || src + next >= tmp + klen) break;
+        if (out + aligned > end) break;
+        out += aligned;
+        src += next;
+    }
+    if (last) *(unsigned long *)last = 0;
+    free(tmp);
+    if (!last) return RXDK_STATUS_NO_MORE_FILES;
+    if (iosb) { iosb->Status = 0; iosb->Information = written; }
+    return RXDK_STATUS_SUCCESS;
+}
+
+long __attribute__((__stdcall__)) sc_NtQueryDirectoryFile(
+    void *file, void *event, void *apc, void *ctx, RXDK_IOSB *iosb, void *info, unsigned long len,
+    int infoClass, int single, void *fileName, int restart)
+{
+    (void)single; (void)fileName;
+    if (infoClass == RXDK_FILE_FULL_DIR_INFORMATION)
+        return rxdk_query_directory_full(file, event, apc, ctx, iosb, (unsigned char *)info, len, restart);
+    return NtQueryDirectoryFile(file, event, apc, ctx, iosb, info, len, infoClass, 0, restart);
+}
+
+/* SetLastError=true, so cdecl. Used when a failed query is turned into an exception message. */
+int sc_FormatMessageW(int flags, void *src, unsigned long msgId, int lang, WCHAR *buf, int nSize, void *args)
+{
+    char tmp[16]; int i = 0, n = 0; unsigned long v = msgId;
+    (void)flags; (void)src; (void)lang; (void)args;
+    if (!buf || nSize < 2) return 0;
+    if (!v) { buf[0] = '0'; buf[1] = 0; return 1; }
+    while (v) { tmp[i++] = (char)('0' + v % 10); v /= 10; }
+    while (i && n < nSize - 1) buf[n++] = (WCHAR)tmp[--i];
+    buf[n] = 0;
+    return n;
+}
+
+/* Windows NtCreateFile: 11 args and a Windows OBJECT_ATTRIBUTES (UTF-16 name). Used for recursive
+ * enumeration (a child directory relative to an already-open parent handle). */
+long __attribute__((__stdcall__)) sc_NtCreateFile(
+    void **file, unsigned long access, RXDK_WIN_OA *oa, RXDK_IOSB *iosb, void *alloc,
+    unsigned long attrs, unsigned long share, unsigned long disp, unsigned long options,
+    void *ea, unsigned long eaLen)
+{
+    RXDK_WIN_USTR *us;
+    char abuf[520];
+    RXDK_ANSI as;
+    RXDK_XBOX_OA xo;
+    int n = 0, i;
+    (void)ea; (void)eaLen; (void)options;
+    if (oa && (us = (RXDK_WIN_USTR *)oa->ObjectName) && us->Buffer) {
+        n = (int)us->Length / 2;
+        if (n > 519) n = 519;
+        for (i = 0; i < n; ++i) abuf[i] = (char)us->Buffer[i];
+    }
+    abuf[n] = 0;
+    as.Length = (unsigned short)n;
+    as.MaximumLength = (unsigned short)(n + 1);
+    as.Buffer = abuf;
+    xo.RootDirectory = oa ? oa->RootDirectory : 0;
+    xo.ObjectName = &as;
+    xo.Attributes = oa ? oa->Attributes : RXDK_OBJ_CASE_INSENSITIVE;
+    return NtCreateFile(file, access, &xo, iosb, alloc, attrs, share, disp,
+                        RXDK_FILE_DIRECTORY_FILE | RXDK_FILE_SYNCHRONOUS_IO_NONALERT | RXDK_FILE_OPEN_FOR_BACKUP_INTENT);
+}
 BOOL   sc_CreateDirectoryW(const WCHAR *n, void *sa) { return CreateDirectoryW(n, sa); }
 BOOL   sc_RemoveDirectoryW(const WCHAR *n) { return RemoveDirectoryW(n); }
 BOOL   sc_DeleteFileW(const WCHAR *n) { return DeleteFileW(n); }

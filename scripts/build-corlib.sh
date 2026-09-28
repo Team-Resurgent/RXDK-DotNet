@@ -4,8 +4,8 @@
 # and the dominant CS#### categories. See docs/phase1b-corlib.md.
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT/scripts/toolchain.sh"
 CORLIB="$ROOT/vendor/mono/mcs/class/corlib"
-CSC="/c/Program Files/dotnet/sdk/10.0.400/Roslyn/bincore/csc.dll"
 OUT="$ROOT/build-out/corlib"; mkdir -p "$OUT"
 
 # corlib pulls its core System.* types from mono's external/corefx submodule — ensure it's present
@@ -67,3 +67,4 @@ grep -oE 'error CS[0-9]+' "$OUT/build.log" | sort | uniq -c | sort -rn | head -1
 echo "-- sample errors --"
 grep -E ': error CS' "$OUT/build.log" | head -8
 [ -f "$OUT/mscorlib.dll" ] && echo "PRODUCED mscorlib.dll ($(stat -c%s "$OUT/mscorlib.dll") bytes)"
+exit $rc

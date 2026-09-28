@@ -20,6 +20,15 @@
 extern "C" {
 #endif
 
+/* libxapi has no 64-bit Interlocked*. A missing prototype makes clang treat the return as
+ * int, so a gint64 compare-and-swap keeps only the low half. The threadpool worker packs
+ * four counters into one gint64 and then sees them go negative. */
+long long InterlockedIncrement64(long long volatile *p);
+long long InterlockedDecrement64(long long volatile *p);
+long long InterlockedAdd64(long long volatile *p, long long v);
+long long InterlockedExchange64(long long volatile *p, long long v);
+long long InterlockedCompareExchange64(long long volatile *p, long long ex, long long comp);
+
 /* MSVCRT time structs the SDK forward-declares but doesn't define. */
 #ifndef RXDK__TIMEB_DEFINED
 #define RXDK__TIMEB_DEFINED

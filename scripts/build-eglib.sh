@@ -6,12 +6,9 @@
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TC="/c/ProgramData/RXDK/llvm/xboxog-windows-x64"
-CLANG="$TC/bin/clang.exe"
-LLVMLIB="$TC/bin/llvm-lib.exe"
+source "$ROOT/scripts/toolchain.sh"
 GEN="$ROOT/build/generated/mono"
 EGLIB="$ROOT/vendor/mono/mono/eglib"
-SDKI="/c/ProgramData/RXDK/sdk/include"
 PAL="$ROOT/pal/include"
 OUT="$ROOT/build-out/obj/eglib"
 LIB="$ROOT/build-out/lib"

@@ -5,12 +5,10 @@
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TC="/c/ProgramData/RXDK/llvm/xboxog-windows-x64"
-CLANG="$TC/bin/clang.exe"
+source "$ROOT/scripts/toolchain.sh"
 GEN="$ROOT/build/generated/mono"
 MONO="$ROOT/vendor/mono"
 EGLIB="$MONO/mono/eglib"
-SDKI="/c/ProgramData/RXDK/sdk/include"
 PAL="$ROOT/pal/include"
 OUT="$ROOT/build-out/obj/metadata"
 mkdir -p "$OUT"
@@ -32,6 +30,9 @@ EXCLUDE='console-unix|file-mmap-posix|w32error-unix|w32event-unix|w32file-unix|w
 EXCLUDE="$EXCLUDE|w32socket-unix|w32socket-win32|w32socket|w32process-unix-bsd|w32process-unix-default|w32process-unix-haiku|w32process-unix-osx|w32process-unix|w32process-win32|w32process"
 # disabled subsystems: COM (coree/cominterop/marshal-windows), socket threadpool-io, security, null console
 EXCLUDE="$EXCLUDE|coree|cominterop|marshal-windows|threadpool-io|threadpool-io-poll|mono-security-windows|console-null"
+# The WASM worker never starts a thread; it queues onto mono_threads_schedule_background_job,
+# which is a no-op here. Leave it out so threadpool-worker-default.c is the one that links.
+EXCLUDE="$EXCLUDE|threadpool-worker-wasm"
 # w32file-win32 IS compiled now: the SDK hardcodes WIN32_FIND_DATA->ANSI and ships no
 # WIN32_FIND_DATAW, so win32_supplement.h defines the wide struct and w32file.h/.c point their
 # find-data at WIN32_FIND_DATAW (xbox branch). The wide Win32 file APIs it calls (FindFirstFileW,
@@ -55,6 +56,15 @@ for s in "${failed[@]}"; do cat "$OUT/$s.err"; done | grep -oE "fatal error: '[^
 echo "-- distinct FIRST non-header errors (top 30) --"
 for s in "${failed[@]}"; do grep -m1 'error:' "$OUT/$s.err" | grep -v 'file not found'; done | sed -E "s/^[^:]+:[0-9]+:[0-9]+: //" | sort | uniq -c | sort -rn | head -30
 echo "-- failed files ($fail) --"; echo "${failed[*]}"
+
+# Culture tables live outside mono/metadata. Compile them into this archive so a full metadata
+# rebuild keeps CultureInfo/RegionInfo. build-host.sh also links locales.o directly.
+if "$CLANG" "${FLAGS[@]}" "$MONO/mono/culture/locales.c" -o "$OUT/locales.o" 2> "$OUT/locales.err"; then
+  pass=$((pass+1))
+  echo "locales.c ok"
+else
+  echo "locales.c FAILED"; cat "$OUT/locales.err"
+fi
 
 if [ "$pass" -gt 0 ]; then
   LIB="$ROOT/build-out/lib"; mkdir -p "$LIB"

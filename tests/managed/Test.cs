@@ -81,6 +81,105 @@ public static class RxdkTest
     // corefx's ntdll NtQueryDirectoryFile path, which isn't wired yet (known follow-up), so it's not
     // exercised here.
     static bool T_DirExists() { return Directory.Exists("D:\\assy") && !Directory.Exists("D:\\assy\\nope"); }
+    // Directory.GetFiles opens the directory (FILE_FLAG_BACKUP_SEMANTICS -> NtCreateFile) and pages
+    // entries with NtQueryDirectoryFile. FileInfo.Length reads the size GetFileAttributesExW fills.
+    static bool T_GetFiles()
+    {
+        string[] files = Directory.GetFiles("D:\\assy");
+        bool saw = false;
+        for (int i = 0; i < files.Length; i++)
+            if (files[i].IndexOf("mscorlib.dll") >= 0) saw = true;
+        return files.Length > 0 && saw;
+    }
+    static bool T_FileLength() { return new FileInfo("D:\\assy\\mscorlib.dll").Length > 1000; }
+    // BCryptGenRandom is a KeTickCount-seeded xorshift. Guid.NewGuid must not be Empty and must not repeat.
+    static bool T_Culture()
+    {
+        var en = new System.Globalization.CultureInfo("en-US");
+        var region = new System.Globalization.RegionInfo("US");
+        var specific = System.Globalization.CultureInfo.GetCultures(System.Globalization.CultureTypes.SpecificCultures);
+        return en.Name == "en-US"
+            && en.NumberFormat.NumberDecimalSeparator == "."
+            && en.DateTimeFormat.GetDayName(System.DayOfWeek.Sunday) == "Sunday"
+            && region.TwoLetterISORegionName == "US"
+            && specific != null && specific.Length > 50;
+    }
+    static bool T_Guid()
+    {
+        var a = Guid.NewGuid();
+        var b = Guid.NewGuid();
+        return a != Guid.Empty && b != Guid.Empty && a != b;
+    }
+    // DeflateStream/GZipStream P/Invoke MonoPosixHelper, which is the bundled zlib.
+    static bool RoundTrip(bool gzip)
+    {
+        byte[] src = Encoding.ASCII.GetBytes(new string('x', 48) + "RXDK-zlib-roundtrip" + new string('y', 48));
+        var ms = new MemoryStream();
+        if (gzip) {
+            using (var z = new System.IO.Compression.GZipStream(ms, System.IO.Compression.CompressionMode.Compress, true))
+                z.Write(src, 0, src.Length);
+        } else {
+            using (var z = new System.IO.Compression.DeflateStream(ms, System.IO.Compression.CompressionMode.Compress, true))
+                z.Write(src, 0, src.Length);
+        }
+        if (ms.Length <= 0) return false;
+        ms.Position = 0;
+        byte[] dst = new byte[src.Length];
+        int got = 0;
+        if (gzip) {
+            using (var z = new System.IO.Compression.GZipStream(ms, System.IO.Compression.CompressionMode.Decompress, true))
+                while (got < dst.Length) {
+                    int k = z.Read(dst, got, dst.Length - got);
+                    if (k <= 0) break;
+                    got += k;
+                }
+        } else {
+            using (var z = new System.IO.Compression.DeflateStream(ms, System.IO.Compression.CompressionMode.Decompress, true))
+                while (got < dst.Length) {
+                    int k = z.Read(dst, got, dst.Length - got);
+                    if (k <= 0) break;
+                    got += k;
+                }
+        }
+        if (got != src.Length) return false;
+        for (int i = 0; i < got; i++) if (dst[i] != src[i]) return false;
+        return true;
+    }
+    static bool T_Deflate() { return RoundTrip(false); }
+    static bool T_Gzip() { return RoundTrip(true); }
+    // Public UDP socket: echo to the title address, and 127.0.0.1 bind reports WSAEADDRNOTAVAIL.
+    static bool T_Udp() { return System.Net.Sockets.Socket.Loopback(); }
+    static bool T_UdpError() { return System.Net.Sockets.Socket.RejectsLoopback(); }
+    static bool T_Tcp() { return System.Net.Sockets.Socket.TcpEcho(); }
+    static bool T_DnsName() { return System.Net.Dns.HostName(); }
+    static bool T_DnsAddr() { return System.Net.Dns.ResolveNumeric(); }
+    static bool T_DnsLookup() { return System.Net.Dns.ResolveName(); }
+    // Writes go to T:\ (the title's persistent HDD partition). D:\ is the DVD and is read-only.
+    // File.WriteAllText/ReadAllText are corefx (FileStream under the hood). The FileStream test
+    // writes a fixed count and reads that same count, so it does not depend on Length/GetFileSizeEx.
+    const string WritePath = "T:\\rxdk-write.txt";
+    static bool T_FileWriteAll()
+    {
+        const string payload = "xbox-write-ok";
+        File.WriteAllText(WritePath, payload);
+        bool ok = File.ReadAllText(WritePath) == payload;
+        File.Delete(WritePath);
+        return ok;
+    }
+    static bool T_FileStreamWrite()
+    {
+        byte[] bytes = Encoding.ASCII.GetBytes("stream");
+        using (var fs = new FileStream(WritePath, FileMode.Create, FileAccess.Write))
+            fs.Write(bytes, 0, bytes.Length);
+        byte[] got = new byte[bytes.Length];
+        int n;
+        using (var fs = new FileStream(WritePath, FileMode.Open, FileAccess.Read))
+            n = fs.Read(got, 0, got.Length);
+        bool ok = n == bytes.Length;
+        for (int i = 0; ok && i < bytes.Length; i++) ok = got[i] == bytes[i];
+        File.Delete(WritePath);
+        return ok;
+    }
     // DateTime.Now/UtcNow + TimeZoneInfo.Local (offset from the Xbox EEPROM via kernel32
     // GetTimeZoneInformation, resolved through our mono_dl P/Invoke fallback).
     static bool T_DateTime()  { var u = DateTime.UtcNow; var n = DateTime.Now; var z = System.TimeZoneInfo.Local; return u.Year >= 2000 && n.Year >= 2000 && z != null; }
@@ -241,6 +340,20 @@ public static class RxdkTest
         try { Check("FileExists",   T_FileExists()); }   catch (Exception e) { Exc("FileExists", e); }
         try { Check("FileStream",   T_FileStream()); }   catch (Exception e) { Exc("FileStream", e); }
         try { Check("DirExists",    T_DirExists()); }    catch (Exception e) { Exc("DirExists", e); }
+        try { Check("FileWriteAll", T_FileWriteAll()); } catch (Exception e) { Exc("FileWriteAll", e); }
+        try { Check("FileStreamWrite", T_FileStreamWrite()); } catch (Exception e) { Exc("FileStreamWrite", e); }
+        try { Check("GetFiles",     T_GetFiles()); }     catch (Exception e) { Exc("GetFiles", e); }
+        try { Check("FileLength",   T_FileLength()); }   catch (Exception e) { Exc("FileLength", e); }
+        try { Check("Guid",         T_Guid()); }         catch (Exception e) { Exc("Guid", e); }
+        try { Check("Culture",      T_Culture()); }      catch (Exception e) { Exc("Culture", e); }
+        try { Check("Deflate",      T_Deflate()); }      catch (Exception e) { Exc("Deflate", e); }
+        try { Check("Gzip",         T_Gzip()); }         catch (Exception e) { Exc("Gzip", e); }
+        try { Check("Udp",          T_Udp()); }          catch (Exception e) { Exc("Udp", e); }
+        try { Check("UdpError",     T_UdpError()); }     catch (Exception e) { Exc("UdpError", e); }
+        try { Check("Tcp",          T_Tcp()); }          catch (Exception e) { Exc("Tcp", e); }
+        try { Check("DnsName",      T_DnsName()); }      catch (Exception e) { Exc("DnsName", e); }
+        try { Check("DnsAddr",      T_DnsAddr()); }      catch (Exception e) { Exc("DnsAddr", e); }
+        try { Check("DnsLookup",    T_DnsLookup()); }    catch (Exception e) { Exc("DnsLookup", e); }
         // System.Console.WriteLine now WORKS (routes to the debug UART via the PAL console handle).
         // The fix: Environment.NewLine was returning null because icall-windows.c failed to compile
         // (shlobj.h), so its mono_icall_get_new_line was shadowed by a null-returning stub, NREing

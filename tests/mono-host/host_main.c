@@ -130,8 +130,11 @@ static int rxdk_run_minitest(const char *name, const char *path)
     unsigned int tok;
     MonoObject *exc = 0;
     int failed;
-    /* argv[0] = program name (skipped by run_main); "--time" enables the driver's per-test timing. */
-    char *argv[2]; argv[0] = (char *)name; argv[1] = "--time";
+    /* argv[0] = program name (skipped by run_main); "--time" enables the driver's per-test timing.
+     * BeginInvoke/EndInvoke run on threadpool-worker-default.c (the WASM worker must stay out
+     * of the link; it never starts a thread). */
+    char *argv[2];
+    argv[0] = (char *)name; argv[1] = "--time";
 
     OutputDebugStringA("\nRXDK-DotNet: === mini test: ");
     OutputDebugStringA(name); OutputDebugStringA(" ===\n");
@@ -176,6 +179,11 @@ static void rxdk_run_all_minitests(void)
         "builtin-types",   "D:\\assy\\mini-builtin-types.dll",
         "devirtualization","D:\\assy\\mini-devirtualization.dll",
         "generics",        "D:\\assy\\mini-generics.dll",
+        "gshared",         "D:\\assy\\mini-gshared.dll",
+        "ratests",         "D:\\assy\\mini-ratests.dll",
+        "basic-calls",     "D:\\assy\\mini-basic-calls.dll",
+        "mixed",           "D:\\assy\\mini-mixed.dll",
+        "gc-test",         "D:\\assy\\mini-gc-test.dll",
     };
     int i, n = (int)(sizeof(tests) / sizeof(tests[0])) / 2;
     int total_failed = 0, files_run = 0, files_err = 0;
@@ -211,6 +219,9 @@ void __cdecl main(void)
     test_path("\\??\\D:\\assy\\mscorlib.dll");
     test_path("D:\\assy");
     test_path("D:\\");
+    /* T: is the title's persistent HDD partition (writable; D: is the read-only DVD). The managed
+     * write tests target T:\rxdk-write.txt — this line says whether the volume is mounted. */
+    test_path("T:\\");
 
     /* Sanity-probe GetSystemInfo (mono_pagesize depends on it — a 0 page size wrecks the GC).
      * Local decl: SYSTEM_INFO's dwPageSize is the DWORD at offset 4 (after the 4-byte union). */

@@ -27,10 +27,12 @@ int mono_cominterop_init(void){return 0;}
 int mono_compile_assembly(void){return 0;}
 /* int mono_compile_create_var(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
 int mono_compile_deferred_assemblies(void){return 0;}
-int mono_cpu_count(void){return 0;}
+/* Xbox is one CPU. mono-proclib-windows.c is excluded, so these are the definitions the
+ * threadpool worker reads. mono_cpu_limit of 0 would set the worker minimum to zero threads. */
+int mono_cpu_count(void){return 1;}
 /* int mono_cpu_get_data(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
-int mono_cpu_limit(void){return 0;}
-int mono_cpu_usage(void){return 0;}
+int mono_cpu_limit(void){return 1;}
+int mono_cpu_usage(void *prev){(void)prev; return 0;}
 int mono_debugger_agent_init(void){return 0;}
 /* int mono_decompose_op_imm(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
 /* mono_dl_* are now REAL (mono-dl.c + mono-dl-windows.c are compiled). Stubbing mono_dl_open to
@@ -56,9 +58,10 @@ int mono_marshal_free_co_task_mem(void){return 0;}
 int mono_marshal_free_hglobal(void){return 0;}
 int mono_marshal_realloc_co_task_mem(void){return 0;}
 int mono_marshal_realloc_hglobal(void){return 0;}
-int mono_network_cleanup(void){return 0;}
+/* mono_network_init/cleanup are w32socket.c. The return-0 stub skipped XNetStartup. */
+/* int mono_network_cleanup(void){return 0;} */
 /* int mono_network_get_data(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
-int mono_network_init(void){return 0;}
+/* int mono_network_init(void){return 0;} */
 /* int mono_networkinterface_list(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
 /* int mono_peephole_ins(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
 /* int mono_print_ins(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
@@ -67,10 +70,10 @@ int mono_process_get_data(void){return 0;}
 /* int mono_process_get_name(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
 /* int mono_process_list(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
 int mono_ptr_to_ansibstr(void){return 0;}
-int mono_rand_close(void){return 0;}
-int mono_rand_init(void){return 0;}
-int mono_rand_open(void){return 0;}
-int mono_rand_try_get_bytes(void){return 0;}
+/* int mono_rand_close(void){return 0;}  -- now real (win32_supplement.c xorshift) */
+/* int mono_rand_init(void){return 0;}  -- now real (win32_supplement.c) */
+/* int mono_rand_open(void){return 0;}  -- now real (win32_supplement.c) */
+/* int mono_rand_try_get_bytes(void){return 0;}  -- now real (win32_supplement.c) */
 int mono_string_from_bstr_checked(void){return 0;}
 int mono_string_from_bstr_icall_impl(void){return 0;}
 int mono_string_to_bstr_impl(void){return 0;}
@@ -133,18 +136,20 @@ int ves_icall_Mono_Security_Cryptography_KeyPairPersistence_IsUserProtected(void
 int ves_icall_Mono_Security_Cryptography_KeyPairPersistence_ProtectMachine(void){return 0;}
 int ves_icall_Mono_Security_Cryptography_KeyPairPersistence_ProtectUser(void){return 0;}
 int ves_icall_System_Diagnostics_FileVersionInfo_GetVersionInfo_internal(void){return 0;}
-int ves_icall_System_Globalization_CalendarData_fill_calendar_data(void){return 0;}
+/* Culture/calendar/region icalls are the real Mono tables (culture/locales.c, linked from
+ * build-host.sh). These return-0 stubs shadowed them, so CultureInfo("en-US") was "not found". */
+/* int ves_icall_System_Globalization_CalendarData_fill_calendar_data(void){return 0;} */
 /* internal_compare/internal_index are now REAL (ordinal collation in win32_supplement.c). The
  * return-0 stubs made CompareInfo report "equal"/"found at 0", breaking String.StartsWith/Compare. */
 /* int ves_icall_System_Globalization_CompareInfo_internal_compare(void){return 0;} */
 /* int ves_icall_System_Globalization_CompareInfo_internal_index(void){return 0;} */
-int ves_icall_System_Globalization_CultureData_fill_culture_data(void){return 0;}
-int ves_icall_System_Globalization_CultureData_fill_number_data(void){return 0;}
-int ves_icall_System_Globalization_CultureInfo_construct_internal_locale_from_lcid(void){return 0;}
-int ves_icall_System_Globalization_CultureInfo_construct_internal_locale_from_name(void){return 0;}
-int ves_icall_System_Globalization_CultureInfo_get_current_locale_name(void){return 0;}
-int ves_icall_System_Globalization_CultureInfo_internal_get_cultures(void){return 0;}
-int ves_icall_System_Globalization_RegionInfo_construct_internal_region_from_name(void){return 0;}
+/* int ves_icall_System_Globalization_CultureData_fill_culture_data(void){return 0;} */
+/* int ves_icall_System_Globalization_CultureData_fill_number_data(void){return 0;} */
+/* int ves_icall_System_Globalization_CultureInfo_construct_internal_locale_from_lcid(void){return 0;} */
+/* int ves_icall_System_Globalization_CultureInfo_construct_internal_locale_from_name(void){return 0;} */
+/* int ves_icall_System_Globalization_CultureInfo_get_current_locale_name(void){return 0;} */
+/* int ves_icall_System_Globalization_CultureInfo_internal_get_cultures(void){return 0;} */
+/* int ves_icall_System_Globalization_RegionInfo_construct_internal_region_from_name(void){return 0;} */
 int ves_icall_System_IOSelector_Add(void){return 0;}
 int ves_icall_System_IOSelector_Remove(void){return 0;}
 int ves_icall_System_IO_MonoIO_DumpHandles(void){return 0;}
@@ -152,37 +157,38 @@ int ves_icall_System_IO_MonoIO_DumpHandles(void){return 0;}
 /* int ves_icall_System_IO_MonoIO_get_DirectorySeparatorChar(void){return 0;} -- now real (win32_supplement.c) */
 /* int ves_icall_System_IO_MonoIO_get_PathSeparator(void){return 0;} -- now real (win32_supplement.c) */
 /* int ves_icall_System_IO_MonoIO_get_VolumeSeparatorChar(void){return 0;} -- now real (win32_supplement.c) */
-int ves_icall_System_Net_Dns_GetHostByAddr(void){return 0;}
-int ves_icall_System_Net_Dns_GetHostByName(void){return 0;}
-int ves_icall_System_Net_Dns_GetHostName(void){return 0;}
-int ves_icall_System_Net_Sockets_SocketException_WSAGetLastError_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_Accept_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_Available_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_Bind_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_Blocking_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_Close_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_Connect_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_Disconnect_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_Duplicate_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_GetSocketOption_arr_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_GetSocketOption_obj_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_IOControl_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_Listen_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_LocalEndPoint_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_Poll_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_ReceiveFrom_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_Receive_array_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_Receive_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_RemoteEndPoint_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_Select_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_SendFile_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_SendTo_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_Send_array_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_Send_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_SetSocketOption_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_Shutdown_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_Socket_icall(void){return 0;}
-int ves_icall_System_Net_Sockets_Socket_SupportPortReuse_icall(void){return 0;}
+/* Socket/Dns icalls are w32socket.c over Xbox XNet (pal/src/xbox_net.c). */
+/* int ves_icall_System_Net_Dns_GetHostByAddr(void){return 0;} */
+/* int ves_icall_System_Net_Dns_GetHostByName(void){return 0;} */
+/* int ves_icall_System_Net_Dns_GetHostName(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_SocketException_WSAGetLastError_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_Accept_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_Available_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_Bind_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_Blocking_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_Close_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_Connect_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_Disconnect_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_Duplicate_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_GetSocketOption_arr_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_GetSocketOption_obj_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_IOControl_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_Listen_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_LocalEndPoint_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_Poll_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_ReceiveFrom_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_Receive_array_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_Receive_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_RemoteEndPoint_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_Select_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_SendFile_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_SendTo_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_Send_array_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_Send_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_SetSocketOption_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_Shutdown_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_Socket_icall(void){return 0;} */
+/* int ves_icall_System_Net_Sockets_Socket_SupportPortReuse_icall(void){return 0;} */
 int ves_icall_System_Runtime_InteropServices_Marshal_AddRefInternal(void){return 0;}
 int ves_icall_System_Runtime_InteropServices_Marshal_BufferToBSTR(void){return 0;}
 int ves_icall_System_Runtime_InteropServices_Marshal_FreeBSTR(void){return 0;}
@@ -199,11 +205,13 @@ int ves_icall_System_Security_Principal_WindowsImpersonationContext_DuplicateTok
 int ves_icall_System_Security_Principal_WindowsPrincipal_IsMemberOfGroupId(void){return 0;}
 int ves_icall_System_Security_Principal_WindowsPrincipal_IsMemberOfGroupName(void){return 0;}
 int ves_icall_System_Text_Normalization_load_normalization_resource(void){return 0;}
-int ves_icall_cancel_blocking_socket_operation(void){return 0;}
+/* int ves_icall_cancel_blocking_socket_operation(void){return 0;} -- real (w32socket.c) */
 /* int realloc_code(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
 /* int set_code_cursor(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
-int inflate(void){return 0;}
-int inflateInit2_(void){return 0;}
+/* inflate/inflateInit2_ are Mono's bundled zlib (mono/zlib, linked from build-host.sh).
+ * A return-0 stub is Z_OK, so it would report success and inflate nothing. */
+/* int inflate(void){return 0;} */
+/* int inflateInit2_(void){return 0;} */
 /* int mono_file_map(void){return 0;}  -- now real (mono-mmap-windows.c / win32_supplement.c) */
 /* int mono_file_unmap(void){return 0;}  -- now real (mono-mmap-windows.c / win32_supplement.c) */
 /* mono_icall_* below are now REAL (icall-windows.c compiles once shlobj.h/SendMessageTimeout gates

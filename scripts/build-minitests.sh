@@ -6,7 +6,7 @@
 # loads each and invokes Tests::Main, which returns the number of failed sub-tests.
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CSC="/c/Program Files/dotnet/sdk/10.0.400/Roslyn/bincore/csc.dll"
+source "$ROOT/scripts/toolchain.sh"
 OUT="$ROOT/build-out/corlib"
 MINI="$ROOT/vendor/mono/mono/mini"
 CORLIB="$OUT/mscorlib.dll"
@@ -18,8 +18,11 @@ DRIVER="$MINI/TestDriver.cs"
 
 # Curated set, ordered easiest-first. basic (int arith/control flow), basic-long (int64),
 # basic-float (x87), basic-math, arrays, objects (OOP/valuetypes), exceptions, builtin-types,
-# devirtualization. generics.cs additionally needs System.Core.dll (Linq) + generics-variant-types.dll.
-TESTS="${*:-basic basic-long basic-float basic-math arrays objects exceptions builtin-types devirtualization generics}"
+# devirtualization, generics (needs System.Core + generics-variant-types), then gshared (gsharedvt),
+# ratests (register allocator), basic-calls, mixed (interp/JIT transitions).
+# Left out: unaligned (Mono.Intrinsics), basic-simd/basic-vectors (SSE), s390-abi/nacl
+# (other ABIs), aot-tests, bench. gc-test is last: a sgen abort reboots before the summary.
+TESTS="${*:-basic basic-long basic-float basic-math arrays objects exceptions builtin-types devirtualization generics gshared ratests basic-calls mixed gc-test}"
 
 # generics.cs needs System.Core.dll (Linq) + generics-variant-types.dll (variant interfaces the IL
 # helper defines; we build the C# equivalent since the RXDK toolchain ships no ilasm).
@@ -30,7 +33,7 @@ if echo "$TESTS" | grep -qw generics; then
   MSYS2_ARG_CONV_EXCL='*' dotnet exec "$(cygpath -w "$CSC")" -nostdlib -noconfig -target:library \
     -out:"$(cygpath -w "$VARDLL")" -reference:"$(cygpath -w "$CORLIB")" "$(cygpath -w "$VARSRC")" \
     > "$OUT/generics-variant-types.log" 2>&1 && echo "  OK   generics-variant-types.dll" \
-    || { echo "  FAIL generics-variant-types.dll"; grep -iE 'error CS' "$OUT/generics-variant-types.log" | head; }
+    || { echo "  FAIL generics-variant-types.dll"; grep -iE 'error CS' "$OUT/generics-variant-types.log" | head; exit 1; }
 fi
 
 ok=0; bad=0; failed=()
@@ -63,5 +66,4 @@ for t in $TESTS; do
   fi
 done
 echo "===== mini tests: $ok built, $bad failed ====="
-[ "$bad" = 0 ] || { echo "failed: ${failed[*]}"; }
-exit 0
+[ "$bad" = 0 ] || { echo "failed: ${failed[*]}"; exit 1; }

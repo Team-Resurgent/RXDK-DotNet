@@ -185,6 +185,9 @@ unsigned long RemoveVectoredExceptionHandler(void *h) { (void)h; return 0; }
 
 /* ---- misc ------------------------------------------------------------------------------------ */
 extern volatile unsigned long KeTickCount;   /* xboxkrnl export: ms-ish ticks since boot */
+/* locales.c asks g_win32_getlocale (remapped to monoeg_*) for CultureInfo.CurrentCulture.
+ * libxapi has no GetLocaleInfo, so there is no process locale; explicit names still load. */
+char *monoeg_g_win32_getlocale(void) { return NULL; }
 unsigned long long __stdcall GetTickCount64(void) { return (unsigned long long)KeTickCount; } /* @0 */
 /* NOTE: GetTickCount + Sleep are declared __declspec(dllimport) by winbase.h, so they can't be
  * defined in a TU that includes <xtl.h>. Mono references them undecorated (cdecl); they're defined
@@ -287,7 +290,28 @@ int mono_w32file_write(void *handle, const void *buffer, unsigned int numbytes,
  * is opaque to Mono, so we stash the file HANDLE in it directly and hand the same HANDLE back as the
  * "fd" (32-bit target: HANDLE fits in int); mono_file_map then reads via that HANDLE. */
 extern void *malloc(size_t);
+extern void *realloc(void *, size_t);
+extern void *memset(void *, int, size_t);
 extern void  free(void *);
+/* zlib's inflateInit2_ calls zcalloc when the stream has no allocator. zutil.c is built
+ * -DZ_SOLO (gzguts.h needs io.h, which the SDK lacks), so these stand in. */
+void *zcalloc(void *opaque, unsigned items, unsigned size)
+{
+    size_t n = (size_t)items * (size_t)size;
+    void *p;
+    (void)opaque;
+    p = malloc(n ? n : 1);
+    if (p && n) memset(p, 0, n);
+    return p;
+}
+void zcfree(void *opaque, void *ptr) { (void)opaque; free(ptr); }
+
+/* HOST_WIN32 Marshal.AllocHGlobal is GlobalAlloc (marshal-windows.c). libxapi's GlobalAlloc
+ * returns NULL, and the enumerator turns that into OutOfMemoryException before it ever queries
+ * the directory. These loose definitions win over the archive copies. */
+void *mono_marshal_alloc_hglobal(size_t size) { return malloc(size ? size : 1); }
+void *mono_marshal_realloc_hglobal(void *ptr, size_t size) { return realloc(ptr, size ? size : 1); }
+void  mono_marshal_free_hglobal(void *ptr) { free(ptr); }
 
 void *mono_file_map_open(const char *name)
 {
@@ -414,8 +438,22 @@ extern int sc_SetEndOfFile(void*);
 extern int sc_FlushFileBuffers(void*);
 extern int sc_CloseHandle(void*);
 extern int sc_ReadFile(void*, void*, unsigned long, unsigned long*, void*);
+extern int sc_FormatMessageW(int, void*, unsigned long, int, unsigned short*, int, void*);
 extern int sc_WriteFile(void*, const void*, unsigned long, unsigned long*, void*);
 extern unsigned long sc_SetFilePointer(void*, long, long*, unsigned long);
+extern void *__attribute__((__stdcall__)) sc_GetProcessHeap(void);
+extern void *__attribute__((__stdcall__)) sc_HeapAlloc(void*, unsigned long, unsigned long);
+extern int __attribute__((__stdcall__)) sc_HeapFree(void*, unsigned long, void*);
+extern long __attribute__((__stdcall__)) sc_NtQueryDirectoryFile(void*, void*, void*, void*, void*, void*, unsigned long, int, int, void*, int);
+extern long __attribute__((__stdcall__)) sc_NtCreateFile(void**, unsigned long, void*, void*, void*, unsigned long, unsigned long, unsigned long, unsigned long, void*, unsigned long);
+extern unsigned long __attribute__((__stdcall__)) RtlNtStatusToDosError(long status);
+long sc_BCryptGenRandom(void *alg, unsigned char *buffer, int length, int flags);
+extern void *CreateZStream(int compress, unsigned char gzip, void *func, void *gchandle);
+extern int CloseZStream(void *zstream);
+extern int Flush(void *stream);
+extern int ReadZStream(void *stream, unsigned char *buffer, int length);
+extern int WriteZStream(void *stream, unsigned char *buffer, int length);
+extern unsigned int rxdk_title_ipv4(void);
 
 typedef void *(*RxdkDlLoad)(const char *name, int flags, char **err, void *ud);
 typedef void *(*RxdkDlSymbol)(void *handle, const char *name, char **err, void *ud);
@@ -425,7 +463,9 @@ extern void *mono_dl_fallback_register(RxdkDlLoad, RxdkDlSymbol, RxdkDlClose, vo
 static void *rxdk_dl_load(const char *name, int flags, char **err, void *ud)
 {
     (void)flags; (void)err; (void)ud;
-    if (name && (strstr(name, "kernel32") || strstr(name, "advapi32")))
+    if (name && (strstr(name, "kernel32") || strstr(name, "advapi32") || strstr(name, "ntdll")
+                 || strstr(name, "api-ms-win-core-heap") || strstr(name, "BCrypt") || strstr(name, "bcrypt")
+                 || strstr(name, "MonoPosixHelper") || strstr(name, "xnet")))
         return (void *)(size_t)0x4B33D11; /* opaque non-NULL "module" handle */
     return NULL;
 }
@@ -441,7 +481,7 @@ static void *rxdk_dl_symbol(void *handle, const char *name, char **err, void *ud
     if (!strcmp(name, "SetThreadErrorMode"))            return (void *)&rxdk_SetThreadErrorMode;
     if (!strcmp(name, "SetErrorMode"))                  return (void *)&rxdk_SetErrorMode;
     /* kernel32: corefx System.IO.FileSystem (File/Directory) direct P/Invokes -> W->A thunks
-     * (win32_file_shims.c). Enumeration's NtQueryDirectoryFile is not wired -> Directory.GetFiles TBD. */
+     * (win32_file_shims.c). Directory.GetFiles uses ntdll NtQueryDirectoryFile (below). */
     if (!strcmp(name, "GetFileAttributesExW")) return (void *)&sc_GetFileAttributesExW;
     if (!strcmp(name, "CreateFileW"))          return (void *)&sc_CreateFileW;
     if (!strcmp(name, "CreateDirectoryW"))     return (void *)&sc_CreateDirectoryW;
@@ -462,6 +502,24 @@ static void *rxdk_dl_symbol(void *handle, const char *name, char **err, void *ud
     if (!strcmp(name, "SetFilePointer"))       return (void *)&sc_SetFilePointer;
     if (!strcmp(name, "SetEndOfFile"))         return (void *)&sc_SetEndOfFile;
     if (!strcmp(name, "FlushFileBuffers"))     return (void *)&sc_FlushFileBuffers;
+    if (!strcmp(name, "FormatMessageW"))       return (void *)&sc_FormatMessageW;
+    /* ntdll: directory enumeration. NtQueryDirectoryFile/NtCreateFile are Windows-signature
+     * thunks (the Xbox kernel's versions differ). RtlNtStatusToDosError is the kernel export. */
+    if (!strcmp(name, "GetProcessHeap"))        return (void *)&sc_GetProcessHeap;
+    if (!strcmp(name, "HeapAlloc"))             return (void *)&sc_HeapAlloc;
+    if (!strcmp(name, "HeapFree"))              return (void *)&sc_HeapFree;
+    if (!strcmp(name, "NtQueryDirectoryFile"))  return (void *)&sc_NtQueryDirectoryFile;
+    if (!strcmp(name, "NtCreateFile"))          return (void *)&sc_NtCreateFile;
+    if (!strcmp(name, "RtlNtStatusToDosError")) return (void *)&RtlNtStatusToDosError;
+    /* bcrypt: Guid.NewGuid / RNGCryptoServiceProvider */
+    if (!strcmp(name, "BCryptGenRandom"))       return (void *)&sc_BCryptGenRandom;
+    /* MonoPosixHelper: DeflateStream/GZipStream (support/zlib-helper.c over bundled zlib). */
+    if (!strcmp(name, "CreateZStream"))         return (void *)&CreateZStream;
+    if (!strcmp(name, "CloseZStream"))          return (void *)&CloseZStream;
+    if (!strcmp(name, "Flush"))                 return (void *)&Flush;
+    if (!strcmp(name, "ReadZStream"))           return (void *)&ReadZStream;
+    if (!strcmp(name, "WriteZStream"))          return (void *)&WriteZStream;
+    if (!strcmp(name, "rxdk_title_ipv4"))       return (void *)&rxdk_title_ipv4;
     /* advapi32: read-side registry (TimeZoneInfo enrichment) -> report "key absent" */
     if (!strcmp(name, "RegOpenKeyExW"))     return (void *)&rxdk_RegOpenKeyExW;
     if (!strcmp(name, "RegCloseKey"))       return (void *)&rxdk_RegCloseKey;
@@ -523,4 +581,87 @@ int ves_icall_System_Globalization_CompareInfo_internal_index(
     }
     return -1;
 }
+
+/* ---- RNG ---------------------------------------------------------------------------------------
+ * mono_rand_* were stubs returning 0, so Guid.NewGuid / Random / RNGCryptoServiceProvider had no
+ * entropy. The SDK has no XeCryptRandom export, and RDTSC faults (privileged). Mix KeTickCount
+ * into an xorshift128. Not a CSPRNG, but successive Guids differ and the buffer is not all zeros. */
+static unsigned long rxdk_rng_s[4];
+static int rxdk_rng_ready;
+
+/* RDTSC is privileged on the Xbox (CR4.TSD): it raises #GP and the guest never returns.
+ * Mix the kernel tick count with a counter so two Guids in the same tick still differ. */
+static unsigned long rxdk_entropy(void)
+{
+    static unsigned long n;
+    n++;
+    return KeTickCount ^ (n * 0x9E3779B9u) ^ (unsigned long)(size_t)&n;
+}
+
+static unsigned long rxdk_rng_next(void)
+{
+    unsigned long t = rxdk_rng_s[0] ^ (rxdk_rng_s[0] << 11);
+    rxdk_rng_s[0] = rxdk_rng_s[1];
+    rxdk_rng_s[1] = rxdk_rng_s[2];
+    rxdk_rng_s[2] = rxdk_rng_s[3];
+    rxdk_rng_s[3] = rxdk_rng_s[3] ^ (rxdk_rng_s[3] >> 19) ^ (t ^ (t >> 8));
+    return rxdk_rng_s[3];
+}
+
+static void rxdk_rng_ensure(void)
+{
+    int i;
+    if (rxdk_rng_ready) return;
+    rxdk_rng_s[0] = rxdk_entropy() | 1u;
+    rxdk_rng_s[1] = rxdk_entropy() | 2u;
+    rxdk_rng_s[2] = rxdk_entropy() | 4u;
+    rxdk_rng_s[3] = rxdk_entropy() | 8u;
+    for (i = 0; i < 16; ++i) (void)rxdk_rng_next();
+    rxdk_rng_ready = 1;
+}
+
+int mono_rand_open(void) { return 1; }
+void *mono_rand_init(const unsigned char *seed, long seed_size)
+{
+    int i;
+    (void)seed; (void)seed_size;
+    rxdk_rng_ensure();
+    for (i = 0; i < 4; ++i) rxdk_rng_s[i] ^= rxdk_entropy();
+    return (void *)1;
+}
+static void rxdk_fill_random(unsigned char *buffer, long buffer_size)
+{
+    long i;
+    rxdk_rng_ensure();
+    for (i = 0; i < buffer_size; ++i) {
+        if ((i & 3) == 0) {
+            unsigned long v = rxdk_rng_next() ^ rxdk_entropy();
+            buffer[i] = (unsigned char)v;
+            if (i + 1 < buffer_size) buffer[i + 1] = (unsigned char)(v >> 8);
+            if (i + 2 < buffer_size) buffer[i + 2] = (unsigned char)(v >> 16);
+            if (i + 3 < buffer_size) buffer[i + 3] = (unsigned char)(v >> 24);
+        }
+    }
+}
+
+int mono_rand_try_get_bytes(void **handle, unsigned char *buffer, long buffer_size, void *error)
+{
+    (void)error;
+    if (!handle || !*handle) return 0;
+    if (!buffer && buffer_size) return 0;
+    rxdk_fill_random(buffer, buffer_size);
+    return 1;
+}
+/* Guid.NewGuid / RNGCryptoServiceProvider P/Invoke BCrypt.dll!BCryptGenRandom.
+ * Winapi with no SetLastError would normally be stdcall, but the caller that reaches this
+ * import pops the arguments itself: a stdcall ret $16 never resumes managed code. A plain
+ * ret does. STATUS_SUCCESS is 0. */
+long sc_BCryptGenRandom(void *alg, unsigned char *buffer, int length, int flags)
+{
+    (void)alg; (void)flags;
+    if (length < 0 || (!buffer && length)) return (long)0xC000000D; /* STATUS_INVALID_PARAMETER */
+    rxdk_fill_random(buffer, length);
+    return 0;
+}
+void mono_rand_close(void *handle) { (void)handle; }
 
