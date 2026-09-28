@@ -71,14 +71,35 @@ checkout, and what to re-run after editing a given area:
 | [`scripts/build-minitests.sh`](scripts/build-minitests.sh) | `mini-*.dll` (official suite) | curated test list                      | fast |
 | [`scripts/build-host.sh`](scripts/build-host.sh)       | links the XBE, packages the ISO  | `pal/src/*`, `tests/mono-host/host_main.c`, or any lib above | ~15s |
 
-Run on [xemu](https://xemu.app) (devkit build), cwd = the xemu dir so relative `roms\` resolve:
+### Running on xemu
+
+Testing is done on [xemu](https://xemu.app) (a **devkit build** — this project's checkout uses
+`D:\Git\xemu-devkit`). The dev environment there is a Cerbios BIOS + an insignia HDD image, all wired
+up in `xemu.toml`, so you don't pass a BIOS/HDD on the command line — only the ISO.
+
+**Run from the xemu directory** (the `roms\` paths in `xemu.toml` are relative), and route the guest's
+debug UART to stdout with `-serial stdio` — that's where all the host's `OutputDebugStringA` /
+`Console` output and the test `PASS/FAIL` lines appear:
 
 ```bash
-xemu.exe -dvd_path build-out/obj/host/RxdkMonoHost.iso -device lpc47m157 -serial stdio
+cd /d/Git/xemu-devkit
+./xemu.exe -dvd_path /d/Git/RXDK-DotNet/build-out/obj/host/RxdkMonoHost.iso -device lpc47m157 -serial stdio
 ```
 
-Add `-d int -D int.log` to log guest CPU exceptions (page faults etc.) with faulting IP/SP/CR2 —
-essential for hard faults with no serial output.
+The XBE runs its tests and exits via `HalReturnToFirmware(QuickReboot)`, so **the box reboots and
+reloads the DVD in a loop** — expect the serial output to repeat. Capture one run and stop:
+
+```bash
+cd /d/Git/xemu-devkit
+timeout 45 ./xemu.exe -dvd_path /d/Git/RXDK-DotNet/build-out/obj/host/RxdkMonoHost.iso \
+  -device lpc47m157 -serial stdio > /tmp/serial.log 2>&1
+grep -aE 'PASS|FAIL|EXC|SUMMARY' /tmp/serial.log | grep -v 'mono:debug'
+```
+
+For a **hard fault with no serial output** (the box resets before printing), add `-d int -D int.log`
+to log guest CPU exceptions with the faulting IP/SP/CR2 — `v=0e` page fault, `v=08` double fault,
+`v=07` x87-FPU. `IP=00000001` means a call through a bad/sentinel function pointer (e.g. a
+calling-convention mismatch); a kernel-space caller `EIP=8001xxxx` points at a libxapi function.
 
 **Gotchas that will bite a fresh session** (see the `memory/` notes below):
 - **Kill `clang`/`llvm-lib` before `build-host`** and verify a probe string landed in the exe
