@@ -206,6 +206,10 @@ public static class RxdkTest
         passed = 0; failed = 0;
         try { Check("Delegate",     T_Delegate()); }     catch (Exception e) { Exc("Delegate", e); }
         try { Check("DelegateBool", T_DelegateBool()); } catch (Exception e) { Exc("DelegateBool", e); }
+        // NOTE: System.Console.WriteLine still throws TypeInitializationException - Console..cctor's
+        // Encoding.Default path NREs deep in corlib (GetEncoding). Tracked as a corlib follow-up; the
+        // harness uses the RxdkConsole.Write sink. (No infinite recursion any more - the Unsafe
+        // intrinsics fixed that.)
         try { Check("IntArith",    T_IntArith()); }    catch (Exception e) { Exc("IntArith", e); }
         try { Check("Unchecked",   T_Unchecked()); }   catch (Exception e) { Exc("Unchecked", e); }
         try { Check("Long",        T_Long()); }        catch (Exception e) { Exc("Long", e); }
