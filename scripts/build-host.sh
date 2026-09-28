@@ -58,7 +58,7 @@ echo "-- other link errors (non-undefined) --"; grep -v 'undefined symbol' "$OUT
 if [ -f "$OUT/mono-host.exe" ]; then
   T=/c/ProgramData/RXDK/tools
   MSYS2_ARG_CONV_EXCL='*' "$T/imagebld.exe" "/in:$(W "$OUT/mono-host.exe")" "/out:$(W "$OUT/mono-host.xbe")" \
-    /nologo /stack:262144 /debug /nolibwarn /dontmountud /TESTID:0xffff0002 /TESTNAME:RxdkMonoHost /TESTVERSION:4096 >/dev/null 2>&1
+    /nologo /stack:1048576 /debug /nolibwarn /dontmountud /TESTID:0xffff0002 /TESTNAME:RxdkMonoHost /TESTVERSION:4096 >/dev/null 2>&1
   rm -rf "$OUT/iso"; mkdir -p "$OUT/iso/RxdkMonoHost/assy"
   cp "$OUT/mono-host.xbe" "$OUT/iso/RxdkMonoHost/default.xbe"
   # bundle the managed BCL + test assembly in D:\assy (mono_set_assemblies_path). Keep a root copy

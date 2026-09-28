@@ -26,7 +26,11 @@
 
 /* ---- VES / codegen ------------------------------------------------------- */
 #define ENABLE_ILGEN 1          /* required whenever the interpreter is enabled */
-#define DISABLE_JIT 1           /* interpreter-first bring-up (port-plan.md §4) */
+/* JIT is ENABLED. We run in the standard `--interpreter` configuration: the interpreter executes
+ * managed method bodies (mono_use_interpreter, set by the host via MONO_AOT_MODE_INTERP_ONLY), but
+ * the JIT (x87 codegen on the SSE2-less PIII) must remain compiled in to produce the interpreter's
+ * native entry trampolines (interp_in wrappers) and other wrappers. DISABLE_JIT is therefore NOT
+ * defined - a pure interp/no-JIT/no-AOT config cannot compile those trampolines. */
 #define USE_GCC_ATOMIC_OPS 1    /* clang/gcc __sync_* — selects the gcc path in mono-membar.h etc. */
 /* Leave DISABLE_INTERPRETER UNSET so the interp EE is compiled in. */
 
@@ -43,7 +47,7 @@
  * the whole subsystem (System.Diagnostics.PerformanceCounter) is irrelevant here. Icalls degrade to
  * stubs, only reached if managed code actually touches a PerformanceCounter. */
 #define DISABLE_PERFCOUNTERS 1
-#define DISABLED_FEATURES "jit,com,remoting,reflection_emit_save,processes,profiler,attach"
+#define DISABLED_FEATURES "com,remoting,reflection_emit_save,processes,profiler,attach"
 
 /* ---- GC ------------------------------------------------------------------ */
 /* HAVE_SGEN_GC is passed as a compile FLAG (-DHAVE_SGEN_GC=1) to the utils/sgen/metadata batches,

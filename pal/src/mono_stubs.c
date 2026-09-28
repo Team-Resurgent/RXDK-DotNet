@@ -5,27 +5,34 @@
  * but does not execute pre-corlib. Each is a no-op returning 0 so the runtime links; replace
  * with real implementations as features are enabled. C linkage => signatures need not match.
  */
-int mini_emit_memcpy(void){return 0;}
-int mini_gc_set_slot_type_from_fp(void){return 0;}
-int mono_alloc_freg(void){return 0;}
-int mono_alloc_ireg(void){return 0;}
-int mono_allocate_stack_slots(void){return 0;}
+/* int mini_emit_memcpy(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
+/* int mini_gc_set_slot_type_from_fp(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
+/* int mono_alloc_freg(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
+/* int mono_alloc_ireg(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
+/* int mono_allocate_stack_slots(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
 int mono_aot_get_array_helper_from_wrapper(void){return 0;}
 int mono_aot_method_hash(void){return 0;}
-int mono_bblock_insert_before_ins(void){return 0;}
-int mono_call_inst_add_outarg_reg(void){return 0;}
-int mono_cfg_set_exception_invalid_program(void){return 0;}
+/* JIT-side queries into an AOT image. No AOT image on Xbox (JIT+interp), so they answer "nothing
+ * here": index -1, all predicates false, no readonly-field override. Replaced by real aot-runtime.c
+ * lookups if AOT is added later. Args typed as void* (ABI-compatible pointer args on x86 cdecl). */
+void *mono_aot_readonly_field_override(void *field){(void)field;return 0;}
+int   mono_aot_direct_icalls_enabled_for_method(void *cfg, void *method){(void)cfg;(void)method;return 0;}
+int   mono_aot_get_method_index(void *method){(void)method;return -1;}
+int   mono_aot_can_enter_interp(void *method){(void)method;return 0;}
+/* int mono_bblock_insert_before_ins(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
+/* int mono_call_inst_add_outarg_reg(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
+/* int mono_cfg_set_exception_invalid_program(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
 int mono_cominterop_cleanup(void){return 0;}
 int mono_cominterop_init(void){return 0;}
 int mono_compile_assembly(void){return 0;}
-int mono_compile_create_var(void){return 0;}
+/* int mono_compile_create_var(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
 int mono_compile_deferred_assemblies(void){return 0;}
 int mono_cpu_count(void){return 0;}
-int mono_cpu_get_data(void){return 0;}
+/* int mono_cpu_get_data(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
 int mono_cpu_limit(void){return 0;}
 int mono_cpu_usage(void){return 0;}
 int mono_debugger_agent_init(void){return 0;}
-int mono_decompose_op_imm(void){return 0;}
+/* int mono_decompose_op_imm(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
 int mono_dl_build_path(void){return 0;}
 int mono_dl_close(void){return 0;}
 int mono_dl_get_executable_path(void){return 0;}
@@ -35,7 +42,7 @@ int mono_dl_open_runtime_lib(void){return 0;}
 int mono_dl_symbol(void){return 0;}
 int mono_fixup_exe_image(void){return 0;}
 int mono_free_bstr(void){return 0;}
-int mono_get_got_var(void){return 0;}
+/* int mono_get_got_var(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
 int mono_get_module_file_name(void){return 0;}
 int mono_get_module_filename(void){return 0;}
 int mono_load_coree(void){return 0;}
@@ -47,15 +54,15 @@ int mono_marshal_free_hglobal(void){return 0;}
 int mono_marshal_realloc_co_task_mem(void){return 0;}
 int mono_marshal_realloc_hglobal(void){return 0;}
 int mono_network_cleanup(void){return 0;}
-int mono_network_get_data(void){return 0;}
+/* int mono_network_get_data(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
 int mono_network_init(void){return 0;}
-int mono_networkinterface_list(void){return 0;}
-int mono_peephole_ins(void){return 0;}
-int mono_print_ins(void){return 0;}
+/* int mono_networkinterface_list(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
+/* int mono_peephole_ins(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
+/* int mono_print_ins(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
 int mono_process_current_pid(void){return 0;}
 int mono_process_get_data(void){return 0;}
-int mono_process_get_name(void){return 0;}
-int mono_process_list(void){return 0;}
+/* int mono_process_get_name(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
+/* int mono_process_list(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
 int mono_ptr_to_ansibstr(void){return 0;}
 int mono_rand_close(void){return 0;}
 int mono_rand_init(void){return 0;}
@@ -68,7 +75,7 @@ int mono_string_to_utf8str_impl(void){return 0;}
 int mono_threadpool_io_cleanup(void){return 0;}
 int mono_threadpool_io_remove_domain_jobs(void){return 0;}
 int mono_threads_schedule_background_job(void){return 0;}
-int mono_varlist_sort(void){return 0;}
+/* int mono_varlist_sort(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
 int mono_w32file_cancel(void){return 0;}
 int mono_w32file_cleanup(void){return 0;}
 int mono_w32file_close(void){return 0;}
@@ -114,9 +121,9 @@ int monoeg_g_dir_close(void){return 0;}
 int monoeg_g_dir_open(void){return 0;}
 int monoeg_g_dir_read_name(void){return 0;}
 int monoeg_g_file_get_contents(void){return 0;}
-int monoeg_g_file_test(void){return 0;}
+/* int monoeg_g_file_test(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
 int monoeg_g_get_current_dir(void){return 0;}
-int monoeg_g_mkdtemp(void){return 0;}
+/* int monoeg_g_mkdtemp(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
 int ves_icall_Mono_Security_Cryptography_KeyPairPersistence_CanSecure(void){return 0;}
 int ves_icall_Mono_Security_Cryptography_KeyPairPersistence_IsMachineProtected(void){return 0;}
 int ves_icall_Mono_Security_Cryptography_KeyPairPersistence_IsUserProtected(void){return 0;}
@@ -188,8 +195,8 @@ int ves_icall_System_Security_Principal_WindowsPrincipal_IsMemberOfGroupId(void)
 int ves_icall_System_Security_Principal_WindowsPrincipal_IsMemberOfGroupName(void){return 0;}
 int ves_icall_System_Text_Normalization_load_normalization_resource(void){return 0;}
 int ves_icall_cancel_blocking_socket_operation(void){return 0;}
-int realloc_code(void){return 0;}
-int set_code_cursor(void){return 0;}
+/* int realloc_code(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
+/* int set_code_cursor(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
 int inflate(void){return 0;}
 int inflateInit2_(void){return 0;}
 /* int mono_file_map(void){return 0;}  -- now real (mono-mmap-windows.c / win32_supplement.c) */
@@ -224,3 +231,18 @@ int mono_mmap_unmap(void){return 0;}
 /* int mono_valloc_granule(void){return 0;}  -- now real (mono-mmap-windows.c / win32_supplement.c) */
 /* int mono_vfree(void){return 0;}  -- now real (mono-mmap-windows.c / win32_supplement.c) */
 int ves_icall_System_Environment_BroadcastSettingChange(void){return 0;}
+
+/* Symbols newly referenced (cdecl, undecorated) once the real JIT objects are pulled in. GetFileAttributesW
+ * here is the cdecl form (distinct from the stdcall @4 thunk in win_cdecl_shims.c); route it to the
+ * working ANSI variant so file checks along this path still resolve. _wmktemp/_wopen are wide CRT temp
+ * helpers we don't use — fail benignly. */
+extern unsigned long __attribute__((__stdcall__)) GetFileAttributesA(const char *path); /* @4 */
+unsigned long GetFileAttributesW(const unsigned short *w)
+{
+    char a[520]; int i = 0;
+    if (w) for (; i < 519 && w[i]; ++i) a[i] = (char)w[i];
+    a[i] = 0;
+    return GetFileAttributesA(a);
+}
+int _wmktemp(void) { return 0; }
+int _wopen(void)   { return -1; }

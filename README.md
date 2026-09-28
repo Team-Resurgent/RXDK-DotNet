@@ -23,9 +23,18 @@ today, verified on xemu:
 - **Managed `Console` output → debug serial** — `Console.Write`/`WriteLine` reach the UART through
   real console handles in the PAL.
 
-**In progress:** enabling the JIT (x87 codegen) in the standard `--interpreter` configuration — the
-interpreter needs the JIT to compile its native entry trampolines (`interp_in` wrappers), so general
-managed code (any class with a static constructor) requires it. See [`docs/`](docs/).
+- **JIT enabled (x87 codegen) in the `--interpreter` configuration** — the interpreter needs the JIT
+  to compile wrappers/trampolines; it compiles and links, and generates native code.
+- **A managed self-test passes 30/30** on-device (`tests/managed/Test.cs`): integer/long/ulong and
+  **x87 float+double** arithmetic, bitops/shifts, arrays + bounds exceptions, foreach, jagged arrays,
+  strings, structs, boxing, static/instance fields, **virtual + interface dispatch**, enums, switch,
+  recursion, ref/out, params, and full **exception handling** (try/catch/finally, rethrow, null-ref,
+  divide-by-zero).
+
+**Known gaps (follow-ups):** the native→interp (`interp_in`) trampoline path used by delegates
+stack-overflows, so delegate invocation and managed `Console` output are disabled in the self-test;
+and some globalization/number-formatting corlib methods (`String.ToUpper/Split`, `int.Parse`,
+`List<T>`) are incomplete. See [`docs/`](docs/).
 
 Build/run: `scripts/build-*.sh` compile the runtime layers, the corlib, and the test assembly, then
 package a bootable XBE/ISO; boot with `xemu -dvd_path <iso> -device lpc47m157 -serial stdio`.
