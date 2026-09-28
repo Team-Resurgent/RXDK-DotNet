@@ -79,42 +79,42 @@ int mono_threadpool_io_cleanup(void){return 0;}
 int mono_threadpool_io_remove_domain_jobs(void){return 0;}
 int mono_threads_schedule_background_job(void){return 0;}
 /* int mono_varlist_sort(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
-int mono_w32file_cancel(void){return 0;}
-int mono_w32file_cleanup(void){return 0;}
-int mono_w32file_close(void){return 0;}
-int mono_w32file_copy(void){return 0;}
-int mono_w32file_create(void){return 0;}
-int mono_w32file_create_directory(void){return 0;}
-int mono_w32file_create_pipe(void){return 0;}
-int mono_w32file_delete(void){return 0;}
-int mono_w32file_find_close(void){return 0;}
-int mono_w32file_find_first(void){return 0;}
-int mono_w32file_find_next(void){return 0;}
-int mono_w32file_flush(void){return 0;}
-int mono_w32file_get_attributes(void){return 0;}
-int mono_w32file_get_attributes_ex(void){return 0;}
+/* int mono_w32file_cancel(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_cleanup(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_close(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_copy(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_create(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_create_directory(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_create_pipe(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_delete(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_find_close(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_find_first(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_find_next(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_flush(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_get_attributes(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_get_attributes_ex(void){return 0;}  -- now real (w32file-win32.c) */
 /* int mono_w32file_get_console_error(void){return 0;}  -- now real (win32_supplement.c console I/O) */
 /* int mono_w32file_get_console_input(void){return 0;}  -- now real (win32_supplement.c console I/O) */
 /* int mono_w32file_get_console_output(void){return 0;}  -- now real (win32_supplement.c console I/O) */
-int mono_w32file_get_cwd(void){return 0;}
-int mono_w32file_get_disk_free_space(void){return 0;}
-int mono_w32file_get_drive_type(void){return 0;}
-int mono_w32file_get_file_size(void){return 0;}
-int mono_w32file_get_file_system_type(void){return 0;}
-int mono_w32file_get_logical_drive(void){return 0;}
+/* int mono_w32file_get_cwd(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_get_disk_free_space(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_get_drive_type(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_get_file_size(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_get_file_system_type(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_get_logical_drive(void){return 0;}  -- now real (w32file-win32.c) */
 /* int mono_w32file_get_type(void){return 0;}  -- now real (win32_supplement.c console I/O) */
-int mono_w32file_init(void){return 0;}
-int mono_w32file_lock(void){return 0;}
-int mono_w32file_move(void){return 0;}
-int mono_w32file_read(void){return 0;}
-int mono_w32file_remove_directory(void){return 0;}
-int mono_w32file_replace(void){return 0;}
-int mono_w32file_seek(void){return 0;}
-int mono_w32file_set_attributes(void){return 0;}
-int mono_w32file_set_cwd(void){return 0;}
-int mono_w32file_set_times(void){return 0;}
-int mono_w32file_truncate(void){return 0;}
-int mono_w32file_unlock(void){return 0;}
+/* int mono_w32file_init(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_lock(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_move(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_read(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_remove_directory(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_replace(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_seek(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_set_attributes(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_set_cwd(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_set_times(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_truncate(void){return 0;}  -- now real (w32file-win32.c) */
+/* int mono_w32file_unlock(void){return 0;}  -- now real (w32file-win32.c) */
 /* int mono_w32file_write(void){return 0;}  -- now real (win32_supplement.c console I/O) */
 int mono_w32process_cleanup(void){return 0;}
 int mono_w32process_init(void){return 0;}
@@ -148,10 +148,10 @@ int ves_icall_System_Globalization_RegionInfo_construct_internal_region_from_nam
 int ves_icall_System_IOSelector_Add(void){return 0;}
 int ves_icall_System_IOSelector_Remove(void){return 0;}
 int ves_icall_System_IO_MonoIO_DumpHandles(void){return 0;}
-int ves_icall_System_IO_MonoIO_get_AltDirectorySeparatorChar(void){return 0;}
-int ves_icall_System_IO_MonoIO_get_DirectorySeparatorChar(void){return 0;}
-int ves_icall_System_IO_MonoIO_get_PathSeparator(void){return 0;}
-int ves_icall_System_IO_MonoIO_get_VolumeSeparatorChar(void){return 0;}
+/* int ves_icall_System_IO_MonoIO_get_AltDirectorySeparatorChar(void){return 0;} -- now real (win32_supplement.c) */
+/* int ves_icall_System_IO_MonoIO_get_DirectorySeparatorChar(void){return 0;} -- now real (win32_supplement.c) */
+/* int ves_icall_System_IO_MonoIO_get_PathSeparator(void){return 0;} -- now real (win32_supplement.c) */
+/* int ves_icall_System_IO_MonoIO_get_VolumeSeparatorChar(void){return 0;} -- now real (win32_supplement.c) */
 int ves_icall_System_Net_Dns_GetHostByAddr(void){return 0;}
 int ves_icall_System_Net_Dns_GetHostByName(void){return 0;}
 int ves_icall_System_Net_Dns_GetHostName(void){return 0;}

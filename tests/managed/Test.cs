@@ -65,6 +65,22 @@ public static class RxdkTest
     static bool T_DelegateBool() { Func<bool> f = DTrue; return f(); }
 
     static bool T_Console()   { System.Console.WriteLine("[console] managed Console.WriteLine works"); return true; }
+    // File I/O over the real Win32 file layer (w32file-win32.c + W->A thunks). Reads from the DVD
+    // (D:\assy, bundled next to the host); the title drive is read-only when booted from disc.
+    // FileStream is Mono's (MonoIO -> mono_w32file_* -> w32file-win32.c + W->A thunks).
+    static bool T_FileStream()
+    {
+        byte[] head = new byte[2]; int n;
+        using (var fs = new FileStream("D:\\assy\\mscorlib.dll", FileMode.Open, FileAccess.Read))
+        { n = fs.Read(head, 0, 2); }
+        return n == 2 && head[0] == (byte)'M' && head[1] == (byte)'Z';
+    }
+    // File/Directory are corefx (direct kernel32 P/Invokes via the mono_dl fallback).
+    static bool T_FileExists() { return File.Exists("D:\\assy\\mscorlib.dll") && !File.Exists("D:\\assy\\nope.xyz"); }
+    // Directory.Exists uses GetFileAttributesExW (works). Directory.GetFiles/enumeration goes through
+    // corefx's ntdll NtQueryDirectoryFile path, which isn't wired yet (known follow-up), so it's not
+    // exercised here.
+    static bool T_DirExists() { return Directory.Exists("D:\\assy") && !Directory.Exists("D:\\assy\\nope"); }
     // DateTime.Now/UtcNow + TimeZoneInfo.Local (offset from the Xbox EEPROM via kernel32
     // GetTimeZoneInformation, resolved through our mono_dl P/Invoke fallback).
     static bool T_DateTime()  { var u = DateTime.UtcNow; var n = DateTime.Now; var z = System.TimeZoneInfo.Local; return u.Year >= 2000 && n.Year >= 2000 && z != null; }
@@ -222,6 +238,9 @@ public static class RxdkTest
         try { Check("DelegateBool", T_DelegateBool()); } catch (Exception e) { Exc("DelegateBool", e); }
         try { Check("Console",      T_Console()); }      catch (Exception e) { Exc("Console", e); }
         try { Check("DateTime",     T_DateTime()); }     catch (Exception e) { Exc("DateTime", e); }
+        try { Check("FileExists",   T_FileExists()); }   catch (Exception e) { Exc("FileExists", e); }
+        try { Check("FileStream",   T_FileStream()); }   catch (Exception e) { Exc("FileStream", e); }
+        try { Check("DirExists",    T_DirExists()); }    catch (Exception e) { Exc("DirExists", e); }
         // System.Console.WriteLine now WORKS (routes to the debug UART via the PAL console handle).
         // The fix: Environment.NewLine was returning null because icall-windows.c failed to compile
         // (shlobj.h), so its mono_icall_get_new_line was shadowed by a null-returning stub, NREing
@@ -269,7 +288,7 @@ public static class RxdkTest
 
     static void Exc(string name, Exception e)
     {
-        RxdkConsole.Write("  EXC   " + name + ": " + e.GetType().Name + "\n");
+        RxdkConsole.Write("  EXC   " + name + ": " + e.GetType().Name + ": " + e.Message + "\n");
         failed++;
     }
 }

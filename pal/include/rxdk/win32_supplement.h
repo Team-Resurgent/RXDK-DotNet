@@ -54,6 +54,7 @@ typedef long long          LONG64;
 typedef unsigned long long ULONG64;
 #endif
 
+
 /* Fixed-width Win32 int aliases the SDK headers don't define. */
 #ifndef RXDK_UINT64_DEFINED
 #define RXDK_UINT64_DEFINED
@@ -255,6 +256,18 @@ typedef struct _WIN32_FIND_DATAW {
 } WIN32_FIND_DATAW, *LPWIN32_FIND_DATAW, *PWIN32_FIND_DATAW;
 /* NOTE: the SDK's winbase.h already defines the ANSI WIN32_FIND_DATAA; only the wide W variant is
  * missing, so we define only that (struct tags can't be #ifndef-guarded against the SDK). */
+#endif
+
+/* SECURITY_ATTRIBUTES: the SDK declares only PSECURITY_ATTRIBUTES (void*), not the struct that
+ * w32file-win32.c's mono_w32file_create_pipe fills. STD_*_HANDLE: GetStdHandle ids the SDK omits. */
+#ifndef RXDK_SECURITY_ATTRIBUTES_DEFINED
+#define RXDK_SECURITY_ATTRIBUTES_DEFINED
+typedef struct _SECURITY_ATTRIBUTES { unsigned long nLength; void *lpSecurityDescriptor; int bInheritHandle; } SECURITY_ATTRIBUTES;
+#endif
+#ifndef STD_INPUT_HANDLE
+#define STD_INPUT_HANDLE  ((unsigned long)-10)
+#define STD_OUTPUT_HANDLE ((unsigned long)-11)
+#define STD_ERROR_HANDLE  ((unsigned long)-12)
 #endif
 
 /* OSVERSIONINFOEX (GetVersionEx), wide + ANSI. */

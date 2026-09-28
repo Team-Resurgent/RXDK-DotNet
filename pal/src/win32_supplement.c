@@ -229,11 +229,15 @@ void *mono_w32file_get_console_output(void) { return RXDK_CON_OUT; }
 void *mono_w32file_get_console_error(void)  { return RXDK_CON_ERR; }
 void *mono_w32file_get_console_input(void)  { return RXDK_CON_IN;  }
 
+/* These three override w32file-win32.c's versions (loose object wins the link) so console handles
+ * route to the UART. Real file handles are delegated to the actual Win32 APIs — so File/FileStream
+ * work while Console keeps reaching serial. */
+#define FILE_TYPE_DISK 0x0001
 int mono_w32file_get_type(void *handle)
 {
     if (handle == RXDK_CON_OUT || handle == RXDK_CON_ERR || handle == RXDK_CON_IN)
         return FILE_TYPE_CHAR;
-    return FILE_TYPE_UNKNOWN;
+    return FILE_TYPE_DISK;   /* real file/handle */
 }
 
 int mono_w32file_write(void *handle, const void *buffer, unsigned int numbytes,
@@ -255,9 +259,19 @@ int mono_w32file_write(void *handle, const void *buffer, unsigned int numbytes,
         if (win32error) *win32error = 0;
         return 1;
     }
-    if (byteswritten) *byteswritten = 0;
-    if (win32error) *win32error = 6 /* ERROR_INVALID_HANDLE */;
-    return 0;
+    if (handle == RXDK_CON_IN) {
+        if (byteswritten) *byteswritten = 0;
+        if (win32error) *win32error = 6 /* ERROR_INVALID_HANDLE */;
+        return 0;
+    }
+    {   /* real file handle */
+        DWORD wrote = 0;
+        BOOL ok = WriteFile((HANDLE)handle, buffer, (DWORD)numbytes, &wrote, NULL);
+        if (byteswritten) *byteswritten = (unsigned int)wrote;
+        if (!ok) { if (win32error) *win32error = (int)GetLastError(); return 0; }
+        if (win32error) *win32error = 0;
+        return 1;
+    }
 }
 
 /* ---- file mapping: read-into-buffer emulation --------------------------------------------------
@@ -363,12 +377,46 @@ static LONG __stdcall rxdk_RegEnumKeyExW(void *k, DWORD i, void *name, void *cn,
 static LONG __stdcall rxdk_RegEnumValueW(void *k, DWORD i, void *name, void *cn, void *rsv, void *type, void *data, void *cb)
 { (void)k;(void)i;(void)name;(void)cn;(void)rsv;(void)type;(void)data;(void)cb; return RXDK_ERROR_NO_MORE_ITEMS; }
 
+/* MonoIO path separators: w32file.c only defines these icalls for !HOST_WIN32, so on our HOST_WIN32
+ * build the mono_stubs.c stubs returned 0 ('\0'), breaking managed path validation (every File/
+ * Directory call threw ArgumentException). Return the Windows separators the Xbox uses (D:\...). */
+unsigned short ves_icall_System_IO_MonoIO_get_DirectorySeparatorChar (void)    { return (unsigned short)'\\'; }
+unsigned short ves_icall_System_IO_MonoIO_get_AltDirectorySeparatorChar (void) { return (unsigned short)'/';  }
+unsigned short ves_icall_System_IO_MonoIO_get_VolumeSeparatorChar (void)       { return (unsigned short)':';  }
+unsigned short ves_icall_System_IO_MonoIO_get_PathSeparator (void)             { return (unsigned short)';';  }
+
 /* Mono dynamic-loader fallback: when g_module_open("kernel32.dll") fails (no dynamic loading on
  * the Xbox), Mono consults registered fallbacks. We claim kernel32/advapi32 and resolve the handful
  * of symbols managed corlib P/Invokes for, from functions already linked into this XBE. Unknown
  * symbols return NULL -> EntryPointNotFoundException (which the corlib call sites catch), not the
  * DllNotFoundException that a missing module would raise. (mono-dl-fallback.h API, declared inline
  * to avoid pulling mono's private headers into the PAL.) */
+static int __stdcall rxdk_SetThreadErrorMode(unsigned long newMode, unsigned long *oldMode) { (void)newMode; if (oldMode) *oldMode = 0; return 1; }
+static unsigned long __stdcall rxdk_SetErrorMode(unsigned long newMode) { (void)newMode; return 0; }
+
+/* corefx direct-P/Invoke W->A thunks (win32_file_shims.c), resolved through the fallback below.
+ * These are cdecl (see win32_file_shims.c: mono's SetLastError=true pinvoke wrapper caller-cleans). */
+extern unsigned long sc_GetFileAttributesExW(const unsigned short*, int, void*);
+extern void *sc_CreateFileW(const unsigned short*, unsigned long, unsigned long, void*, unsigned long, unsigned long, void*);
+extern int sc_CreateDirectoryW(const unsigned short*, void*);
+extern int sc_RemoveDirectoryW(const unsigned short*);
+extern int sc_DeleteFileW(const unsigned short*);
+extern int sc_SetFileAttributesW(const unsigned short*, unsigned long);
+extern unsigned long sc_GetCurrentDirectoryW(unsigned long, unsigned short*);
+extern int sc_SetCurrentDirectoryW(const unsigned short*);
+extern void *sc_FindFirstFileExW(const unsigned short*, int, void*, int, void*, unsigned long);
+extern int sc_FindNextFileW(void*, void*);
+extern int sc_MoveFileExW(const unsigned short*, const unsigned short*, unsigned long);
+extern int sc_CopyFileExW(const unsigned short*, const unsigned short*, void*, void*, void*, unsigned long);
+extern int sc_ReplaceFileW(const unsigned short*, const unsigned short*, const unsigned short*, unsigned long, void*, void*);
+extern int sc_FindClose(void*);
+extern int sc_SetEndOfFile(void*);
+extern int sc_FlushFileBuffers(void*);
+extern int sc_CloseHandle(void*);
+extern int sc_ReadFile(void*, void*, unsigned long, unsigned long*, void*);
+extern int sc_WriteFile(void*, const void*, unsigned long, unsigned long*, void*);
+extern unsigned long sc_SetFilePointer(void*, long, long*, unsigned long);
+
 typedef void *(*RxdkDlLoad)(const char *name, int flags, char **err, void *ud);
 typedef void *(*RxdkDlSymbol)(void *handle, const char *name, char **err, void *ud);
 typedef void *(*RxdkDlClose)(void *handle, void *ud);
@@ -388,6 +436,32 @@ static void *rxdk_dl_symbol(void *handle, const char *name, char **err, void *ud
     /* kernel32: time zone (DateTime.Now) */
     if (!strcmp(name, "GetTimeZoneInformation"))        return (void *)&GetTimeZoneInformation;
     if (!strcmp(name, "GetDynamicTimeZoneInformation")) return (void *)&GetDynamicTimeZoneInformation;
+    /* kernel32: error-mode toggles the managed File/Directory path calls to suppress the hard-error
+     * dialog around drive access. No such dialog on Xbox — accept and report "no previous mode". */
+    if (!strcmp(name, "SetThreadErrorMode"))            return (void *)&rxdk_SetThreadErrorMode;
+    if (!strcmp(name, "SetErrorMode"))                  return (void *)&rxdk_SetErrorMode;
+    /* kernel32: corefx System.IO.FileSystem (File/Directory) direct P/Invokes -> W->A thunks
+     * (win32_file_shims.c). Enumeration's NtQueryDirectoryFile is not wired -> Directory.GetFiles TBD. */
+    if (!strcmp(name, "GetFileAttributesExW")) return (void *)&sc_GetFileAttributesExW;
+    if (!strcmp(name, "CreateFileW"))          return (void *)&sc_CreateFileW;
+    if (!strcmp(name, "CreateDirectoryW"))     return (void *)&sc_CreateDirectoryW;
+    if (!strcmp(name, "RemoveDirectoryW"))     return (void *)&sc_RemoveDirectoryW;
+    if (!strcmp(name, "DeleteFileW"))          return (void *)&sc_DeleteFileW;
+    if (!strcmp(name, "SetFileAttributesW"))   return (void *)&sc_SetFileAttributesW;
+    if (!strcmp(name, "GetCurrentDirectoryW")) return (void *)&sc_GetCurrentDirectoryW;
+    if (!strcmp(name, "SetCurrentDirectoryW")) return (void *)&sc_SetCurrentDirectoryW;
+    if (!strcmp(name, "FindFirstFileExW"))     return (void *)&sc_FindFirstFileExW;
+    if (!strcmp(name, "FindNextFileW"))        return (void *)&sc_FindNextFileW;
+    if (!strcmp(name, "MoveFileExW"))          return (void *)&sc_MoveFileExW;
+    if (!strcmp(name, "CopyFileExW"))          return (void *)&sc_CopyFileExW;
+    if (!strcmp(name, "ReplaceFileW"))         return (void *)&sc_ReplaceFileW;
+    if (!strcmp(name, "FindClose"))            return (void *)&sc_FindClose;
+    if (!strcmp(name, "ReadFile"))             return (void *)&sc_ReadFile;
+    if (!strcmp(name, "WriteFile"))            return (void *)&sc_WriteFile;
+    if (!strcmp(name, "CloseHandle"))          return (void *)&sc_CloseHandle;
+    if (!strcmp(name, "SetFilePointer"))       return (void *)&sc_SetFilePointer;
+    if (!strcmp(name, "SetEndOfFile"))         return (void *)&sc_SetEndOfFile;
+    if (!strcmp(name, "FlushFileBuffers"))     return (void *)&sc_FlushFileBuffers;
     /* advapi32: read-side registry (TimeZoneInfo enrichment) -> report "key absent" */
     if (!strcmp(name, "RegOpenKeyExW"))     return (void *)&rxdk_RegOpenKeyExW;
     if (!strcmp(name, "RegCloseKey"))       return (void *)&rxdk_RegCloseKey;

@@ -30,13 +30,14 @@ echo "== compile PAL glue + host =="
 "$CLANG" "${CFLAGS[@]}" "$ROOT/pal/src/win_crt_compat.c"   -o "$OUT/win_crt_compat.o"   || exit 1
 "$CLANG" "${CFLAGS[@]}" "$ROOT/pal/src/mono_stubs.c"       -o "$OUT/mono_stubs.o"       || exit 1
 "$CLANG" "${CFLAGS[@]}" "$ROOT/pal/src/win_cdecl_shims.c"  -o "$OUT/win_cdecl_shims.o"  || exit 1
+"$CLANG" "${CFLAGS[@]}" "$ROOT/pal/src/win32_file_shims.c" -o "$OUT/win32_file_shims.o" || exit 1
 "$CLANG" "${CFLAGS[@]}" "$ROOT/tests/mono-host/host_main.c" -o "$OUT/host_main.o"        || exit 1
 echo "   ok"
 
 echo "== trial link (unresolved -> warnings, to enumerate the gap) =="
 W() { cygpath -w "$1"; }
 MSYS2_ARG_CONV_EXCL='*' "$CLANG" \
-  "$(W "$OUT/host_main.o")" "$(W "$OUT/win32_supplement.o")" "$(W "$OUT/win_crt_compat.o")" "$(W "$OUT/win_cdecl_shims.o")" \
+  "$(W "$OUT/host_main.o")" "$(W "$OUT/win32_supplement.o")" "$(W "$OUT/win_crt_compat.o")" "$(W "$OUT/win_cdecl_shims.o")" "$(W "$OUT/win32_file_shims.o")" \
   -Wl,--start-group \
   "$(W "$LIB/libmini.lib")" "$(W "$LIB/libmonoruntime.lib")" "$(W "$LIB/libmonoutils.lib")" "$(W "$LIB/libeglib.lib")" \
   "$(W "$SDKL/libxapi.lib")" "$(W "$SDKL/libkernel.lib")" "$(W "$SDKL/libc.lib")" "$(W "$SDKL/libcpp.lib")" "$(W "$SDKL/libcompat.lib")" \

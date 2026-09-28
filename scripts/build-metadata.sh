@@ -32,10 +32,11 @@ EXCLUDE='console-unix|file-mmap-posix|w32error-unix|w32event-unix|w32file-unix|w
 EXCLUDE="$EXCLUDE|w32socket-unix|w32socket-win32|w32socket|w32process-unix-bsd|w32process-unix-default|w32process-unix-haiku|w32process-unix-osx|w32process-unix|w32process-win32|w32process"
 # disabled subsystems: COM (coree/cominterop/marshal-windows), socket threadpool-io, security, null console
 EXCLUDE="$EXCLUDE|coree|cominterop|marshal-windows|threadpool-io|threadpool-io-poll|mono-security-windows|console-null"
-# w32file-win32: blocked by an RXDK-SDK bug (winbase.h typedefs WIN32_FIND_DATA->A unconditionally,
-# ignoring UNICODE, and ships no WIN32_FIND_DATAW) -> find_first signature conflict. Deferred pending
-# an SDK fix (upstream) or a targeted shim; needed for Win32 file IO at milestone 4.
-EXCLUDE="$EXCLUDE|w32file-win32"
+# w32file-win32 IS compiled now: the SDK hardcodes WIN32_FIND_DATA->ANSI and ships no
+# WIN32_FIND_DATAW, so win32_supplement.h defines the wide struct and w32file.h/.c point their
+# find-data at WIN32_FIND_DATAW (xbox branch). The wide Win32 file APIs it calls (FindFirstFileW,
+# CreateDirectoryW, ...) are W->A-thunked in pal/src/win32_file_shims.c (the SDK's W file APIs are
+# broken on D:\; only the ANSI ones work).
 
 pass=0; fail=0; failed=()
 for f in "$MONO"/mono/sgen/*.c "$MONO"/mono/metadata/*.c; do
