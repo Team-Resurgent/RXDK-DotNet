@@ -100,12 +100,10 @@ Ordered roughly by value / tractability. Each names the concrete files to touch.
 
 1. **File writes** — reads work; writes need a *writable* volume (the title drive `D:\` is read-only
    when booted from DVD). Use **`T:\`** — the title's per-title persistent HDD partition (writable on
-   the devkit/xemu HDD image); `Z:\` (cache) is the other option. Test `File.WriteAllText`/`FileStream`
-   write + read-back to `T:\`. The write path is already wired (`mono_w32file_write` in
+   the devkit/xemu HDD image). Test `File.WriteAllText`/`FileStream` write + read-back to `T:\`. The
+   write path is already wired (`mono_w32file_write` in
    [`pal/src/win32_supplement.c`](pal/src/win32_supplement.c) → `WriteFile`; corefx `WriteFile` via the
    fallback), and `CreateFileW` (open/create) is thunked — so this is mostly picking `T:\` and testing.
-   Note: `T:\` may need the title to be HDD-installed, or an explicit mount; if `T:\` isn't present on
-   the DVD-booted image, check `Z:\` or mount a partition in the host before opening for write.
 2. **`Directory.GetFiles` / enumeration** — corefx `FileSystemEnumerator` uses **ntdll
    `NtQueryDirectoryFile`** (currently unwired → OOM). Wire `NtQueryDirectoryFile`/`NtCreateFile`
    (xboxkrnl exports them) in [`pal/src/win32_file_shims.c`](pal/src/win32_file_shims.c) + register in
