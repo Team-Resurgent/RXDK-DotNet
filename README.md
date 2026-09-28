@@ -35,9 +35,13 @@ today, verified on xemu:
 
 - **Mono's own JIT regression suite runs on-device — 515/515, 0 failures.** The upstream tests from
   [`mono/mini/*.cs`](vendor/mono/mono/mini) are built with Roslyn against our `mscorlib` and driven
-  by the host through reflection (`TestDriver.RunTests` → `MethodInfo.Invoke`):
-  `basic` 134, `basic-long` 97, `basic-float` (x87) 58, `arrays` 36, `objects` 105, `exceptions` 85.
-  The `test_<N>_<name>` methods are unmodified upstream; see [`scripts/build-minitests.sh`](scripts/build-minitests.sh).
+  by the host through the **unmodified** upstream `TestDriver.cs` (reflection + `MethodInfo.Invoke`,
+  run with `--time`): `basic` 134, `basic-long` 97, `basic-float` (x87) 58, `arrays` 36,
+  `objects` 105, `exceptions` 85. See [`scripts/build-minitests.sh`](scripts/build-minitests.sh).
+
+- **`DateTime.Now` / `TimeZoneInfo` work** — the local offset comes from the Xbox EEPROM time zone
+  (`kernel32!GetTimeZoneInformation` in libxapi), resolved through a Mono dynamic-loader fallback that
+  maps `DllImport` targets to linked-in functions, since the Xbox has no user-mode loader.
 
 Build/run: `scripts/build-*.sh` compile the runtime layers, the corlib, and the test assembly, then
 package a bootable XBE/ISO; boot with `xemu -dvd_path <iso> -device lpc47m157 -serial stdio`.
