@@ -8,6 +8,7 @@
  */
 #include <xtl.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "rxdk/win32_supplement.h"
 #include <psapi.h>   /* PROCESS_MEMORY_COUNTERS (our compat shim) */
@@ -307,4 +308,99 @@ void *mono_file_map(size_t length, int flags, int fd, unsigned long long offset,
     return p;
 }
 int mono_file_unmap(void *addr, void *handle) { (void)handle; free(addr); return 0; }
+
+/* ---- time zone: satisfy corefx System.TimeZoneInfo (DateTime.Now) --------------------------- *
+ * corefx TimeZoneInfo.Win32.cs P/Invokes kernel32!GetTimeZoneInformation and
+ * kernel32!GetDynamicTimeZoneInformation to derive the local UTC offset for DateTime.Now.
+ * GetTimeZoneInformation is provided by RXDK libxapi (reads the Xbox EEPROM time zone);
+ * GetDynamicTimeZoneInformation is not, so we implement it here by delegating to the former
+ * (the DYNAMIC struct's leading fields ARE a TIME_ZONE_INFORMATION; the trailing
+ * TimeZoneKeyName/DynamicDaylightTimeDisabled we leave zeroed — corefx tolerates an empty key).
+ * With no dynamic loading on the Xbox these DllImport("kernel32.dll") calls can't resolve the
+ * usual way, so rxdk_register_pinvoke_fallback() (below) hands Mono our linked-in addresses. */
+typedef struct _RXDK_DYNAMIC_TIME_ZONE_INFORMATION {
+    LONG      Bias;
+    WCHAR     StandardName[32];
+    SYSTEMTIME StandardDate;
+    LONG      StandardBias;
+    WCHAR     DaylightName[32];
+    SYSTEMTIME DaylightDate;
+    LONG      DaylightBias;
+    WCHAR     TimeZoneKeyName[128];
+    BOOLEAN   DynamicDaylightTimeDisabled;
+} RXDK_DYNAMIC_TIME_ZONE_INFORMATION;
+
+DWORD __stdcall GetDynamicTimeZoneInformation(RXDK_DYNAMIC_TIME_ZONE_INFORMATION *p)
+{
+    if (p) memset(p, 0, sizeof(*p));
+    /* Report "no dynamic time zone". corefx TimeZoneInfo.GetLocalTimeZone() then returns a UTC dummy
+     * (TimeZoneInfo.Win32.cs: result == TIME_ZONE_ID_INVALID) WITHOUT consulting the registry, which
+     * the Xbox lacks — and whose empty results tripped a null-deref in the corefx enrichment path.
+     * DateTime.Now's offset does NOT use this: it calls GetTimeZoneInformation (real libxapi, reads
+     * the Xbox EEPROM time zone) via GetLocalTimeZoneFromWin32Data, which is registry-free. */
+    return TIME_ZONE_ID_INVALID;
+}
+
+/* Registry (advapi32): the Xbox has no registry, but corefx TimeZoneInfo tries to enrich the local
+ * zone from HKLM\...\Time Zones before falling back to the bias GetTimeZoneInformation returned.
+ * We expose the read-side Reg*W entry points as stubs that report ERROR_FILE_NOT_FOUND, so the
+ * managed RegistryKey layer sees "key absent" and TimeZoneInfo falls back cleanly (rather than the
+ * P/Invoke raising an uncaught DllNotFoundException). __stdcall + exact arity so the marshalling
+ * thunk's stack cleanup matches; the C names are irrelevant (the fallback resolves by string). */
+#define RXDK_ERROR_FILE_NOT_FOUND 2L
+#define RXDK_ERROR_NO_MORE_ITEMS  259L
+static LONG __stdcall rxdk_RegOpenKeyExW(void *k, const void *sub, DWORD o, DWORD sam, void **out_k)
+{ (void)k; (void)sub; (void)o; (void)sam; if (out_k) *out_k = NULL; return RXDK_ERROR_FILE_NOT_FOUND; }
+static LONG __stdcall rxdk_RegCloseKey(void *k) { (void)k; return 0; }
+static LONG __stdcall rxdk_RegQueryValueExW(void *k, const void *name, void *res, void *type, void *data, void *cb)
+{ (void)k; (void)name; (void)res; (void)type; (void)data; (void)cb; return RXDK_ERROR_FILE_NOT_FOUND; }
+static LONG __stdcall rxdk_RegQueryInfoKeyW(void *k, void *cls, void *ccls, void *rsv, void *nsub, void *maxsub,
+    void *maxcls, void *nval, void *maxnl, void *maxvl, void *sd, void *ft)
+{ (void)k;(void)cls;(void)ccls;(void)rsv;(void)nsub;(void)maxsub;(void)maxcls;(void)nval;(void)maxnl;(void)maxvl;(void)sd;(void)ft;
+  return RXDK_ERROR_FILE_NOT_FOUND; }
+static LONG __stdcall rxdk_RegEnumKeyExW(void *k, DWORD i, void *name, void *cn, void *rsv, void *cls, void *ccls, void *ft)
+{ (void)k;(void)i;(void)name;(void)cn;(void)rsv;(void)cls;(void)ccls;(void)ft; return RXDK_ERROR_NO_MORE_ITEMS; }
+static LONG __stdcall rxdk_RegEnumValueW(void *k, DWORD i, void *name, void *cn, void *rsv, void *type, void *data, void *cb)
+{ (void)k;(void)i;(void)name;(void)cn;(void)rsv;(void)type;(void)data;(void)cb; return RXDK_ERROR_NO_MORE_ITEMS; }
+
+/* Mono dynamic-loader fallback: when g_module_open("kernel32.dll") fails (no dynamic loading on
+ * the Xbox), Mono consults registered fallbacks. We claim kernel32/advapi32 and resolve the handful
+ * of symbols managed corlib P/Invokes for, from functions already linked into this XBE. Unknown
+ * symbols return NULL -> EntryPointNotFoundException (which the corlib call sites catch), not the
+ * DllNotFoundException that a missing module would raise. (mono-dl-fallback.h API, declared inline
+ * to avoid pulling mono's private headers into the PAL.) */
+typedef void *(*RxdkDlLoad)(const char *name, int flags, char **err, void *ud);
+typedef void *(*RxdkDlSymbol)(void *handle, const char *name, char **err, void *ud);
+typedef void *(*RxdkDlClose)(void *handle, void *ud);
+extern void *mono_dl_fallback_register(RxdkDlLoad, RxdkDlSymbol, RxdkDlClose, void *);
+
+static void *rxdk_dl_load(const char *name, int flags, char **err, void *ud)
+{
+    (void)flags; (void)err; (void)ud;
+    if (name && (strstr(name, "kernel32") || strstr(name, "advapi32")))
+        return (void *)(size_t)0x4B33D11; /* opaque non-NULL "module" handle */
+    return NULL;
+}
+static void *rxdk_dl_symbol(void *handle, const char *name, char **err, void *ud)
+{
+    (void)handle; (void)err; (void)ud;
+    if (!name) return NULL;
+    /* kernel32: time zone (DateTime.Now) */
+    if (!strcmp(name, "GetTimeZoneInformation"))        return (void *)&GetTimeZoneInformation;
+    if (!strcmp(name, "GetDynamicTimeZoneInformation")) return (void *)&GetDynamicTimeZoneInformation;
+    /* advapi32: read-side registry (TimeZoneInfo enrichment) -> report "key absent" */
+    if (!strcmp(name, "RegOpenKeyExW"))     return (void *)&rxdk_RegOpenKeyExW;
+    if (!strcmp(name, "RegCloseKey"))       return (void *)&rxdk_RegCloseKey;
+    if (!strcmp(name, "RegQueryValueExW"))  return (void *)&rxdk_RegQueryValueExW;
+    if (!strcmp(name, "RegQueryInfoKeyW"))  return (void *)&rxdk_RegQueryInfoKeyW;
+    if (!strcmp(name, "RegEnumKeyExW"))     return (void *)&rxdk_RegEnumKeyExW;
+    if (!strcmp(name, "RegEnumValueW"))     return (void *)&rxdk_RegEnumValueW;
+    return NULL;
+}
+static void *rxdk_dl_close(void *handle, void *ud) { (void)handle; (void)ud; return NULL; }
+
+void rxdk_register_pinvoke_fallback(void)
+{
+    mono_dl_fallback_register(rxdk_dl_load, rxdk_dl_symbol, rxdk_dl_close, NULL);
+}
 

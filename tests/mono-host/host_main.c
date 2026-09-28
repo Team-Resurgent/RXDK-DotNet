@@ -33,6 +33,9 @@ extern MonoImage  *mono_assembly_get_image(MonoAssembly *assembly);
 extern MonoClass  *mono_class_from_name(MonoImage *image, const char *name_space, const char *name);
 extern MonoMethod *mono_class_get_method_from_name(MonoClass *klass, const char *name, int param_count);
 extern MonoObject *mono_runtime_invoke(MonoMethod *method, void *obj, void **params, MonoObject **exc);
+/* Builds the managed string[] from argv (argv[0] is the program name, argv[1..] become Main's args)
+ * and invokes Main, returning its int exit code. Used to pass "--time" to the mini-test driver. */
+extern int         mono_runtime_run_main(MonoMethod *method, int argc, char *argv[], MonoObject **exc);
 extern void       *mono_object_unbox(MonoObject *obj);
 extern MonoClass  *mono_object_get_class(MonoObject *obj);
 extern const char *mono_class_get_name(MonoClass *klass);
@@ -121,10 +124,10 @@ static int rxdk_run_minitest(const char *name, const char *path)
     MonoImage *img;
     MonoClass *klass;
     MonoMethod *entry;
-    MonoObject *res, *exc = 0;
-    void *arg0 = 0;            /* managed `string[] args = null` */
-    void *params[1];
-    params[0] = &arg0;
+    MonoObject *exc = 0;
+    int failed;
+    /* argv[0] = program name (skipped by run_main); "--time" enables the driver's per-test timing. */
+    char *argv[2]; argv[0] = (char *)name; argv[1] = "--time";
 
     OutputDebugStringA("\nRXDK-DotNet: === mini test: ");
     OutputDebugStringA(name); OutputDebugStringA(" ===\n");
@@ -136,7 +139,7 @@ static int rxdk_run_minitest(const char *name, const char *path)
     entry = mono_class_get_method_from_name(klass, "Main", 1);
     if (!entry) { OutputDebugStringA("  Main(string[]) not found\n"); return -1; }
 
-    res = mono_runtime_invoke(entry, 0, params, &exc);
+    failed = mono_runtime_run_main(entry, 2, argv, &exc);
     if (exc) {
         MonoClass *ec = mono_object_get_class(exc);
         const char *en = ec ? mono_class_get_name(ec) : 0;
@@ -152,11 +155,8 @@ static int rxdk_run_minitest(const char *name, const char *path)
         }
         return -1;
     }
-    {
-        int failed = res ? *(int *)mono_object_unbox(res) : -1;
-        rxdk_print_int("  failed sub-tests = ", failed);
-        return failed;
-    }
+    rxdk_print_int("  failed sub-tests = ", failed);
+    return failed;
 }
 
 static void rxdk_run_all_minitests(void)
@@ -222,6 +222,10 @@ void __cdecl main(void)
     }
 
     mono_set_assemblies_path("D:\\assy");
+
+    /* Resolve the corlib P/Invokes into kernel32.dll (e.g. TimeZoneInfo -> GetTimeZoneInformation,
+     * for DateTime.Now) to our linked-in implementations, since the Xbox has no dynamic loading. */
+    { extern void rxdk_register_pinvoke_fallback(void); rxdk_register_pinvoke_fallback(); }
 
     /* Verbose assembly-load tracing (env is disabled on Xbox, so set it programmatically) to see
      * exactly why corlib load fails. */

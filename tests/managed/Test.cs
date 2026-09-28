@@ -65,6 +65,9 @@ public static class RxdkTest
     static bool T_DelegateBool() { Func<bool> f = DTrue; return f(); }
 
     static bool T_Console()   { System.Console.WriteLine("[console] managed Console.WriteLine works"); return true; }
+    // DateTime.Now/UtcNow + TimeZoneInfo.Local (offset from the Xbox EEPROM via kernel32
+    // GetTimeZoneInformation, resolved through our mono_dl P/Invoke fallback).
+    static bool T_DateTime()  { var u = DateTime.UtcNow; var n = DateTime.Now; var z = System.TimeZoneInfo.Local; return u.Year >= 2000 && n.Year >= 2000 && z != null; }
 
     static bool T_IntArith()  { return 7 * 6 == 42 && 100 / 7 == 14 && 100 % 7 == 2 && (3 - 9) == -6; }
     static bool T_Unchecked() { unchecked { int x = int.MaxValue; return x + 1 == int.MinValue; } }
@@ -209,6 +212,7 @@ public static class RxdkTest
         try { Check("Delegate",     T_Delegate()); }     catch (Exception e) { Exc("Delegate", e); }
         try { Check("DelegateBool", T_DelegateBool()); } catch (Exception e) { Exc("DelegateBool", e); }
         try { Check("Console",      T_Console()); }      catch (Exception e) { Exc("Console", e); }
+        try { Check("DateTime",     T_DateTime()); }     catch (Exception e) { Exc("DateTime", e); }
         // System.Console.WriteLine now WORKS (routes to the debug UART via the PAL console handle).
         // The fix: Environment.NewLine was returning null because icall-windows.c failed to compile
         // (shlobj.h), so its mono_icall_get_new_line was shadowed by a null-returning stub, NREing

@@ -33,13 +33,16 @@ int mono_cpu_limit(void){return 0;}
 int mono_cpu_usage(void){return 0;}
 int mono_debugger_agent_init(void){return 0;}
 /* int mono_decompose_op_imm(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
-int mono_dl_build_path(void){return 0;}
-int mono_dl_close(void){return 0;}
-int mono_dl_get_executable_path(void){return 0;}
-int mono_dl_get_system_dir(void){return 0;}
-int mono_dl_open(void){return 0;}
-int mono_dl_open_runtime_lib(void){return 0;}
-int mono_dl_symbol(void){return 0;}
+/* mono_dl_* are now REAL (mono-dl.c + mono-dl-windows.c are compiled). Stubbing mono_dl_open to
+ * return 0 disabled the P/Invoke fallback path entirely; the real mono_dl_open consults the
+ * fallbacks we register (rxdk_register_pinvoke_fallback). Do NOT re-add these. */
+/* int mono_dl_build_path(void){return 0;} */
+/* int mono_dl_close(void){return 0;} */
+/* int mono_dl_get_executable_path(void){return 0;} */
+/* int mono_dl_get_system_dir(void){return 0;} */
+/* int mono_dl_open(void){return 0;} */
+/* int mono_dl_open_runtime_lib(void){return 0;} */
+/* int mono_dl_symbol(void){return 0;} */
 int mono_fixup_exe_image(void){return 0;}
 int mono_free_bstr(void){return 0;}
 /* int mono_get_got_var(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */

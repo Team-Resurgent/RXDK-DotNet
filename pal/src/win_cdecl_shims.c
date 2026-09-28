@@ -82,6 +82,13 @@ int         monoeg_g_get_charset(const char **charset) { if (charset) *charset =
 extern void *__attribute__((__stdcall__)) CreateSemaphoreA(void *sa, long initial, long max, const char *name); /* _CreateSemaphoreA@16 */
 void *CreateSemaphoreW(void *sa, long initial, long max, const unsigned short *name) { (void)name; return CreateSemaphoreA(sa, initial, max, (const char *)0); }
 void *GetModuleHandle(const void *name) { (void)name; return (void *)0x00010000; } /* image base as a token */
+/* Dynamic-loader primitives mono-dl-windows.c references but the Xbox has no user-mode loader for.
+ * They fail deliberately: mono_dl_open_file() then returns NULL, so mono_dl_open() falls through to
+ * the registered P/Invoke fallbacks (rxdk_register_pinvoke_fallback) which resolve the specific
+ * kernel32 symbols corlib needs. (stdcall to match the WINAPI declarations in mono-dl-windows.c.) */
+void *LoadLibraryExW(const unsigned short *f, void *h, unsigned long fl) { (void)f; (void)h; (void)fl; return 0; }
+void *GetModuleHandleW(const unsigned short *n) { (void)n; return 0; }
+int   EnumProcessModules(void *proc, void **mod, unsigned long cb, unsigned long *needed) { (void)proc; (void)mod; (void)cb; (void)needed; return 0; }
 int   GetConsoleMode(void *h, unsigned long *mode) { (void)h; (void)mode; return 0; } /* no console */
 int   SetThreadContext(void *thread, const void *ctx) { (void)thread; (void)ctx; return 0; }
 int   CancelSynchronousIo(void *thread) { (void)thread; return 0; }

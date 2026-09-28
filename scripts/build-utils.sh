@@ -34,8 +34,11 @@ EXCLUDE='mono-dl-darwin|mono-dl-posix|mono-log-android|mono-log-darwin|mono-log-
 EXCLUDE="$EXCLUDE|mono-hwcap-arm|mono-hwcap-arm64|mono-hwcap-riscv|mono-hwcap-s390x|mono-hwcap-sparc|mono-hwcap-ppc|mono-hwcap-wasm|mono-threads-mach|mono-threads-wasm|mono-threads-posix-signals"
 # networking (sockets disabled on Xbox bring-up)
 EXCLUDE="$EXCLUDE|networking|networking-fallback|networking-missing|networking-windows|mono-networkinterfaces|mono-poll"
-# disabled subsystems: processes/psapi, bcrypt-rand, alt allocator, dynamic loading, io-portability
-EXCLUDE="$EXCLUDE|mono-proclib|mono-proclib-windows|mono-rand-windows|dlmalloc|mono-dl|mono-dl-windows|mono-embed|mono-io-portability"
+# disabled subsystems: processes/psapi, bcrypt-rand, alt allocator, io-portability.
+# mono-dl(+windows) ARE compiled: the Xbox has no LoadLibrary so g_module_open fails, but the real
+# mono_dl_open consults registered fallbacks (rxdk_register_pinvoke_fallback) to resolve corlib
+# P/Invokes (e.g. kernel32!GetTimeZoneInformation for DateTime.Now) to our linked-in functions.
+EXCLUDE="$EXCLUDE|mono-proclib|mono-proclib-windows|mono-rand-windows|dlmalloc|mono-embed|mono-io-portability"
 
 pass=0; fail=0; failed=()
 for f in "$MONO"/mono/utils/*.c; do

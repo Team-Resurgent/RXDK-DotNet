@@ -10,9 +10,9 @@ CSC="/c/Program Files/dotnet/sdk/10.0.400/Roslyn/bincore/csc.dll"
 OUT="$ROOT/build-out/corlib"
 MINI="$ROOT/vendor/mono/mono/mini"
 CORLIB="$OUT/mscorlib.dll"
-# Local copy of TestDriver.cs with harness-only DateTime.Now timing guarded (Xbox has no timezone
-# registry -> DateTime.Now P/Invokes kernel32.dll, which can't resolve). Test methods are pristine.
-DRIVER="$ROOT/tests/managed/MiniTestDriver.cs"
+# Pristine upstream driver. DateTime.Now now works on-device (win32_supplement.c provides the
+# kernel32 time-zone P/Invokes via a mono_dl fallback), so --time timing runs unmodified.
+DRIVER="$MINI/TestDriver.cs"
 
 [ -f "$CORLIB" ] || { echo "ERROR: $CORLIB not found — build corlib first"; exit 1; }
 
