@@ -24,6 +24,16 @@ enum { MONO_AOT_MODE_NONE = 0, MONO_AOT_MODE_INTERP_ONLY = 8 };
 extern void mono_jit_set_aot_mode(int mode);
 extern int  mono_aot_mode; /* MonoAotMode global in mini-runtime.c */
 
+/* Managed execution (invoke a method through the interpreter). */
+typedef struct _MonoClass  MonoClass;
+typedef struct _MonoMethod MonoMethod;
+typedef struct _MonoObject MonoObject;
+extern MonoImage  *mono_assembly_get_image(MonoAssembly *assembly);
+extern MonoClass  *mono_class_from_name(MonoImage *image, const char *name_space, const char *name);
+extern MonoMethod *mono_class_get_method_from_name(MonoClass *klass, const char *name, int param_count);
+extern MonoObject *mono_runtime_invoke(MonoMethod *method, void *obj, void **params, MonoObject **exc);
+extern void       *mono_object_unbox(MonoObject *obj);
+
 /* xboxkrnl: hand control back to the dashboard/firmware. FIRMWARE_REENTRY: 0=Halt, 1=Reboot,
  * 2=QuickReboot. Used as the app's exit path (an Xbox title never "returns" to a shell). */
 extern void __attribute__((__stdcall__)) HalReturnToFirmware(unsigned int routine); /* @4 */
@@ -42,6 +52,53 @@ static void rxdk_mono_log(const char *domain, const char *level, const char *msg
     OutputDebugStringA(msg ? msg : "(null)"); OutputDebugStringA("\n");
 }
 static void rxdk_mono_print(const char *string, int is_stdout) { (void)is_stdout; OutputDebugStringA(string); }
+static void rxdk_print_int(const char *label, int v)
+{
+    char b[16]; int n = 0, neg = 0; unsigned int u;
+    OutputDebugStringA(label);
+    if (v < 0) { neg = 1; u = (unsigned int)(-v); } else u = (unsigned int)v;
+    if (!u) b[n++] = '0'; else { char t[12]; int ti = 0; while (u) { t[ti++] = (char)('0' + u % 10); u /= 10; } while (ti) b[n++] = t[--ti]; }
+    b[n] = 0;
+    if (neg) OutputDebugStringA("-");
+    OutputDebugStringA(b); OutputDebugStringA("\n");
+}
+
+/* Load the test assembly and interpret a couple of static methods — the first managed IL executed
+ * on the Xbox. Pure arithmetic (Add, Fib) so success is a clean signal the interpreter works. */
+static void rxdk_run_managed(void)
+{
+    int st = 0;
+    MonoAssembly *asmb;
+    MonoImage *img;
+    MonoClass *klass;
+    MonoMethod *add, *fib;
+    MonoObject *res, *exc;
+    int a, b;
+    void *args[2];
+
+    OutputDebugStringA("RXDK-DotNet: loading D:\\assy\\Test.dll\n");
+    asmb = mono_assembly_open("D:\\assy\\Test.dll", &st);
+    if (!asmb) { OutputDebugStringA("RXDK-DotNet: Test.dll load FAILED\n"); return; }
+    img = mono_assembly_get_image(asmb);
+    klass = mono_class_from_name(img, "", "RxdkTest");
+    if (!klass) { OutputDebugStringA("RXDK-DotNet: class RxdkTest not found\n"); return; }
+    add = mono_class_get_method_from_name(klass, "Add", 2);
+    fib = mono_class_get_method_from_name(klass, "Fib", 1);
+    if (!add || !fib) { OutputDebugStringA("RXDK-DotNet: method not found\n"); return; }
+
+    a = 20; b = 22; args[0] = &a; args[1] = &b; exc = 0;
+    OutputDebugStringA("RXDK-DotNet: invoking RxdkTest.Add(20, 22)\n");
+    res = mono_runtime_invoke(add, 0, args, &exc);
+    if (exc) { OutputDebugStringA("RXDK-DotNet: Add threw an exception\n"); return; }
+    rxdk_print_int("RXDK-DotNet: Add returned = ", *(int *)mono_object_unbox(res));
+
+    a = 20; args[0] = &a; exc = 0;
+    OutputDebugStringA("RXDK-DotNet: invoking RxdkTest.Fib(20)\n");
+    res = mono_runtime_invoke(fib, 0, args, &exc);
+    if (exc) { OutputDebugStringA("RXDK-DotNet: Fib threw an exception\n"); return; }
+    rxdk_print_int("RXDK-DotNet: Fib(20) = ", *(int *)mono_object_unbox(res));
+    OutputDebugStringA("RXDK-DotNet: managed execution OK\n");
+}
 static void test_path(const char *p)
 {
     DWORD a = GetFileAttributesA(p);
@@ -97,6 +154,9 @@ void __cdecl main(void)
     domain = mono_jit_init_version("rxdk-dotnet", "v4.0.30319");
     OutputDebugStringA(domain ? "RXDK-DotNet: mono_jit_init OK -- corlib loaded!\n"
                               : "RXDK-DotNet: mono_jit_init returned NULL\n");
+
+    if (domain)
+        rxdk_run_managed();
 
     /* Let the debug UART drain, then hand control back to the dashboard (an Xbox title exits by
      * returning to firmware rather than falling off the end of main). */

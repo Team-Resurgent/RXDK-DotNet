@@ -59,9 +59,15 @@ if [ -f "$OUT/mono-host.exe" ]; then
   T=/c/ProgramData/RXDK/tools
   MSYS2_ARG_CONV_EXCL='*' "$T/imagebld.exe" "/in:$(W "$OUT/mono-host.exe")" "/out:$(W "$OUT/mono-host.xbe")" \
     /nologo /stack:262144 /debug /nolibwarn /dontmountud /TESTID:0xffff0002 /TESTNAME:RxdkMonoHost /TESTVERSION:4096 >/dev/null 2>&1
-  mkdir -p "$OUT/iso/RxdkMonoHost"; cp "$OUT/mono-host.xbe" "$OUT/iso/RxdkMonoHost/default.xbe"
-  # bundle the managed BCL so mono_jit_init can load it from the DVD (D:\mscorlib.dll)
-  [ -f "$ROOT/build-out/corlib/mscorlib.dll" ] && cp "$ROOT/build-out/corlib/mscorlib.dll" "$OUT/iso/RxdkMonoHost/mscorlib.dll"
+  rm -rf "$OUT/iso"; mkdir -p "$OUT/iso/RxdkMonoHost/assy"
+  cp "$OUT/mono-host.xbe" "$OUT/iso/RxdkMonoHost/default.xbe"
+  # bundle the managed BCL + test assembly in D:\assy (mono_set_assemblies_path). Keep a root copy
+  # of mscorlib for the file-access probe.
+  if [ -f "$ROOT/build-out/corlib/mscorlib.dll" ]; then
+    cp "$ROOT/build-out/corlib/mscorlib.dll" "$OUT/iso/RxdkMonoHost/assy/mscorlib.dll"
+    cp "$ROOT/build-out/corlib/mscorlib.dll" "$OUT/iso/RxdkMonoHost/mscorlib.dll"
+  fi
+  [ -f "$ROOT/build-out/corlib/Test.dll" ] && cp "$ROOT/build-out/corlib/Test.dll" "$OUT/iso/RxdkMonoHost/assy/Test.dll"
   MSYS2_ARG_CONV_EXCL='*' "$T/xdvdfs.exe" pack "$(W "$OUT/iso/RxdkMonoHost")" "$(W "$OUT/RxdkMonoHost.iso")" >/dev/null 2>&1
   echo "packaged -> build-out/obj/host/RxdkMonoHost.iso  (boot: xemu -dvd_path <iso> -device lpc47m157 -serial stdio)"
 fi
