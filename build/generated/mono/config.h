@@ -39,6 +39,10 @@
 #define DISABLE_PROCESSES 1
 #define DISABLE_PROFILER 1
 #define DISABLE_ATTACH 1
+/* No OS perf-counter surface on Xbox; mono_perfcounters_init faults building its shared area, and
+ * the whole subsystem (System.Diagnostics.PerformanceCounter) is irrelevant here. Icalls degrade to
+ * stubs, only reached if managed code actually touches a PerformanceCounter. */
+#define DISABLE_PERFCOUNTERS 1
 #define DISABLED_FEATURES "jit,com,remoting,reflection_emit_save,processes,profiler,attach"
 
 /* ---- GC ------------------------------------------------------------------ */
@@ -61,8 +65,19 @@
 /* We are classic desktop Win32 — flips all 73 HAVE_API_SUPPORT_WIN32_* gates (w32subset.h) ON so
  * Mono calls the real Win32 APIs (CreateSemaphoreW, …) instead of the "unsupported" stubs. */
 #define HAVE_CLASSIC_WINAPI_SUPPORT 1
-#define UNICODE 1               /* Mono is a Unicode build on Windows: generic Win32 A/W macros -> W */
-#define _UNICODE 1
+/* ...but force OFF two Win32 API subsets the Xbox genuinely lacks, so the files that gate on them
+ * compile their no-op fallback branches instead of pulling headers/APIs we don't have:
+ *   - TIMERS: mmsystem.h / timeGetDevCaps / timeBeginPeriod / timeSetEvent — only the (disabled)
+ *     statistical profiler uses these (mini-windows.c).
+ *   - COMMAND_LINE_TO_ARGV: shellapi.h / CommandLineToArgvW — MONO_* env option parsing, unused on
+ *     Xbox (no environment, no root exe) (driver.c).
+ * These #ifndef-guard in w32subset.h, and config.h is force-included first, so our value sticks. */
+#define HAVE_API_SUPPORT_WIN32_TIMERS 0
+#define HAVE_API_SUPPORT_WIN32_COMMAND_LINE_TO_ARGV 0
+/* NOTE: NOT a UNICODE build. RXDK/libxapi implements the ANSI (A) Win32 file APIs; its WIDE (W)
+ * ones are broken on D:\ paths (verified on-device). Leaving UNICODE undefined makes Mono's generic
+ * Win32 calls resolve to the working A variants; the few explicit-W calls are W->A-thunked in
+ * win_cdecl_shims.c. (SDK winbase.h already typedefs WIN32_FIND_DATA -> ...A unconditionally.) */
 #define TARGET_WIN32 1
 #define TARGET_X86 1
 #define HOST_X86 1

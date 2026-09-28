@@ -192,7 +192,12 @@ void FlushProcessWriteBuffers(void) {}
 void GetCurrentProcessorNumberEx(void *procnum) { if (procnum) { unsigned short *p = (unsigned short*)procnum; p[0]=0; p[1]=0; } }
 int  IsWow64Process(void *proc, int *result) { (void)proc; if (result) *result = 0; return 1; }
 void *NtCurrentProcess(void) { return (void *)(unsigned long)-1; }
-void *NtCurrentTeb(void) { void *teb; __asm__ __volatile__("movl %%fs:0x18, %0" : "=r"(teb)); return teb; }
+/* On desktop NT, NT_TIB.Self lives at fs:[0x18]. The original Xbox kernel leaves that slot 0 and
+ * instead keeps the self-pointer of the fs-based control region at fs:[0x1C] (KPCR.SelfPcr), whose
+ * NT_TIB (ExceptionList/StackBase/StackLimit at offsets 0/4/8) is the running thread's. Return that
+ * so NT_TIB fields (stack bounds, exception list) are reachable. Verified on-device: fs[0x18]==0,
+ * fs[0x1C] points to a region whose +4/+8 match the live StackBase/StackLimit. */
+void *NtCurrentTeb(void) { void *teb; __asm__ __volatile__("movl %%fs:0x1c, %0" : "=r"(teb)); return teb; }
 int  GetThreadContext(void *thread, void *ctx) { (void)thread;(void)ctx; return 0; }
 int  WSAWaitForMultipleEvents(unsigned long n, const void *ev, int all, unsigned long ms, int alertable)
 { (void)n;(void)ev;(void)all;(void)ms;(void)alertable; return (int)0xFFFFFFFF; /* WSA_WAIT_FAILED */ }
@@ -204,4 +209,53 @@ int GetVersionExW(void *info)
     o->dwMajorVersion = 5; o->dwMinorVersion = 1; o->dwBuildNumber = 2600; o->dwPlatformId = 2;
     return 1;
 }
+
+/* ---- file mapping: read-into-buffer emulation --------------------------------------------------
+ * The Xbox has NO Win32 file-mapping API (libxapi ships neither CreateFileMapping, MapViewOfFile
+ * nor UnmapViewOfFile), and Mono's HOST_WIN32 image loader (metadata/image.c) maps assemblies via
+ * mono_file_map -> CreateFileMappingW/MapViewOfFile with no fileio fallback compiled in. The
+ * mono-filemap.c open path is worse still: it uses _wfopen with a UTF-16 path, and RXDK's wide file
+ * APIs are broken on D:\ paths. So we override the whole mono_file_map_* family with loose defs
+ * (they win the --allow-multiple-definition race over the archive copies) built ONLY on the ANSI
+ * primitives verified to work on-device: CreateFileA / GetFileSize / SetFilePointer / ReadFile.
+ * A "mapping" is just the whole (sub)range read into a malloc'd buffer — assemblies are small and
+ * loaded read-only, so this is functionally identical to a private read-only mapping. MonoFileMap*
+ * is opaque to Mono, so we stash the file HANDLE in it directly and hand the same HANDLE back as the
+ * "fd" (32-bit target: HANDLE fits in int); mono_file_map then reads via that HANDLE. */
+extern void *malloc(size_t);
+extern void  free(void *);
+
+void *mono_file_map_open(const char *name)
+{
+    HANDLE h = CreateFileA(name, GENERIC_READ, FILE_SHARE_READ, NULL,
+                           OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    return (h == INVALID_HANDLE_VALUE) ? NULL : (void *)h;
+}
+unsigned long long mono_file_map_size(void *fmap)
+{
+    DWORD hi = 0, lo = GetFileSize((HANDLE)fmap, &hi);
+    return ((unsigned long long)hi << 32) | lo;
+}
+int mono_file_map_fd(void *fmap) { return (int)(size_t)fmap; }  /* HANDLE round-trips through int (32-bit) */
+int mono_file_map_close(void *fmap) { return CloseHandle((HANDLE)fmap) ? 0 : -1; }
+
+void *mono_file_map(size_t length, int flags, int fd, unsigned long long offset, void **ret_handle)
+{
+    HANDLE h = (HANDLE)(size_t)fd;
+    void  *p;
+    DWORD  got = 0;
+    (void)flags;
+    if (ret_handle) *ret_handle = NULL;
+    p = malloc(length);
+    if (!p)
+        return NULL;
+    SetFilePointer(h, (LONG)offset, NULL, FILE_BEGIN);
+    if (!ReadFile(h, p, (DWORD)length, &got, NULL) || got != (DWORD)length) {
+        free(p);
+        return NULL;
+    }
+    if (ret_handle) *ret_handle = p;   /* handle == buffer; freed by mono_file_unmap */
+    return p;
+}
+int mono_file_unmap(void *addr, void *handle) { (void)handle; free(addr); return 0; }
 

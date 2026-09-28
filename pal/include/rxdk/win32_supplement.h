@@ -115,6 +115,14 @@ typedef struct _PROCESSOR_NUMBER { unsigned short Group; unsigned char Number; u
 #define FORMAT_MESSAGE_FROM_SYSTEM     0x00001000
 #define FORMAT_MESSAGE_ARGUMENT_ARRAY  0x00002000
 #endif
+/* Language IDs for FormatMessageW (mono-mmap-windows.c error strings). */
+#ifndef LANG_NEUTRAL
+#define LANG_NEUTRAL    0x00
+#define SUBLANG_DEFAULT 0x01
+#endif
+#ifndef MAKELANGID
+#define MAKELANGID(p, s) ((((unsigned short)(s)) << 10) | (unsigned short)(p))
+#endif
 #ifndef MWMO_ALERTABLE
 #define MWMO_WAITALL        0x0001
 #define MWMO_ALERTABLE      0x0002
@@ -125,6 +133,10 @@ typedef struct _PROCESSOR_NUMBER { unsigned short Group; unsigned char Number; u
 #define SEM_NOGPFAULTERRORBOX      0x0002
 #define SEM_NOALIGNMENTFAULTEXCEPT 0x0004
 #define SEM_NOOPENFILEERRORBOX     0x8000
+#endif
+/* Thread access rights (OpenThread) — used by mini-windows.c's context capture. */
+#ifndef THREAD_ALL_ACCESS
+#define THREAD_ALL_ACCESS 0x1F03FF
 #endif
 #ifndef FILE_MAP_READ
 #define FILE_MAP_COPY    0x0001

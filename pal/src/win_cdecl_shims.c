@@ -51,16 +51,30 @@ void *__attribute__((__stdcall__)) CreateFileW(const unsigned short *name, unsig
 {
     char a[520]; rxdk_w2a(name, a, 520); return CreateFileA(a, access, share, sa, disp, flags, tmpl);
 }
-extern void *__attribute__((__stdcall__)) CreateFileMappingA(void *hFile, void *sa, unsigned long protect,
-                                                             unsigned long maxHigh, unsigned long maxLow, const char *name); /* @24 */
-void *__attribute__((__stdcall__)) CreateFileMappingW(void *hFile, void *sa, unsigned long protect,
-                                                      unsigned long maxHigh, unsigned long maxLow, const unsigned short *name)
-{
-    char a[520];
-    const char *n = (const char *)0;
-    if (name) { rxdk_w2a(name, a, 520); n = a; }
-    return CreateFileMappingA(hFile, sa, protect, maxHigh, maxLow, n);
-}
+/* The Xbox has NO Win32 file-mapping API (libxapi ships none of these). Mono's real assembly loader
+ * no longer reaches them — mono_file_map/_open/... are overridden with a read-into-buffer impl in
+ * win32_supplement.c — but mono-mmap-windows.o's now-dead mono_file_map_error still references these
+ * symbols. The SDK headers don't declare them, so Mono references them UNDECORATED (implicit cdecl);
+ * define them as never-called cdecl stubs to satisfy the link. Likewise FormatMessageW (error-string
+ * formatting) and the CRT _get_osfhandle (fd->HANDLE) on that same dead path. */
+void *CreateFileMappingW(void *h, void *sa, unsigned long prot,
+                         unsigned long hi, unsigned long lo, const unsigned short *n)
+{ (void)h;(void)sa;(void)prot;(void)hi;(void)lo;(void)n; return (void *)0; }
+void *MapViewOfFile(void *map, unsigned long access,
+                    unsigned long offHi, unsigned long offLo, unsigned long bytes)
+{ (void)map;(void)access;(void)offHi;(void)offLo;(void)bytes; return (void *)0; }
+int  UnmapViewOfFile(const void *addr) { (void)addr; return 1; }
+unsigned long FormatMessageW(unsigned long flags, const void *src, unsigned long msgid,
+                             unsigned long langid, unsigned short *buf, unsigned long size, void *args)
+{ (void)flags;(void)src;(void)msgid;(void)langid;(void)buf;(void)size;(void)args; return 0; }
+void *_get_osfhandle(int fd) { (void)fd; return (void *)(long)-1; }  /* CRT -> __get_osfhandle */
+
+/* eglib helpers from the still-deferred gmisc-win32 (locale/codepage) — minimal Xbox impls. */
+int         monoeg_g_path_is_absolute(const char *p) { return (p && p[0] && p[1] == ':') ? 1 : 0; }
+const char *monoeg_g_get_home_dir(void)  { return "D:\\"; }
+const char *monoeg_g_get_tmp_dir(void)   { return "D:\\"; }
+const char *monoeg_g_get_user_name(void) { return "xbox"; }
+int         monoeg_g_get_charset(const char **charset) { if (charset) *charset = "UTF-8"; return 1; }
 
 /* Win32 APIs Mono references undecorated (SDK lacks the exact variant). Defined cdecl here to match.
  * CreateSemaphoreW is real (threads/GC need it) -> the SDK's ANSI CreateSemaphoreA (a stdcall
@@ -76,6 +90,11 @@ int   RevertToSelf(void) { return 1; }
 void  IoCompleteRequest(void) {} /* kernel DDK — unreachable in our usermode paths */
 
 unsigned long SetErrorMode(unsigned long mode) { (void)mode; return 0; } /* no error dialogs on Xbox */
+
+/* Console APIs referenced (undecorated / implicit cdecl) by driver.c's unused main path. */
+int _getch(void) { return -1; }                                    /* CRT _getch -> __getch */
+int FreeConsole(void) { return 1; }
+int SetThreadStackGuarantee(unsigned long *sz) { (void)sz; return 1; }
 
 /* No Win32 message queue on Xbox — treat the message-wait as a plain object wait. */
 extern unsigned long __attribute__((__stdcall__))

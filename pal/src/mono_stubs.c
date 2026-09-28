@@ -192,8 +192,8 @@ int realloc_code(void){return 0;}
 int set_code_cursor(void){return 0;}
 int inflate(void){return 0;}
 int inflateInit2_(void){return 0;}
-int mono_file_map(void){return 0;}
-int mono_file_unmap(void){return 0;}
+/* int mono_file_map(void){return 0;}  -- now real (mono-mmap-windows.c / win32_supplement.c) */
+/* int mono_file_unmap(void){return 0;}  -- now real (mono-mmap-windows.c / win32_supplement.c) */
 int mono_icall_get_environment_variable_names(void){return 0;}
 int mono_icall_get_file_path_prefix(void){return 0;}
 int mono_icall_get_machine_name(void){return 0;}
@@ -205,7 +205,7 @@ int mono_icall_make_platform_path(void){return 0;}
 int mono_icall_module_get_hinstance(void){return 0;}
 int mono_icall_wait_for_input_idle(void){return 0;}
 int mono_icall_write_windows_debug_string(void){return 0;}
-int mono_jit_init(void){return 0;}
+/* mono_jit_init / mono_jit_init_version are now REAL (driver.c compiles) — no stub. */
 int mono_mmap_close(void){return 0;}
 int mono_mmap_configure_inheritability(void){return 0;}
 int mono_mmap_flush(void){return 0;}
@@ -213,14 +213,14 @@ int mono_mmap_map(void){return 0;}
 int mono_mmap_open_file(void){return 0;}
 int mono_mmap_open_handle(void){return 0;}
 int mono_mmap_unmap(void){return 0;}
-int mono_mprotect(void){return 0;}
-int mono_pagesize(void){return 0;}
-int mono_shared_area(void){return 0;}
-int mono_shared_area_for_pid(void){return 0;}
-int mono_shared_area_instances(void){return 0;}
-int mono_shared_area_unload(void){return 0;}
-int mono_valloc(void){return 0;}
-int mono_valloc_aligned(void){return 0;}
-int mono_valloc_granule(void){return 0;}
-int mono_vfree(void){return 0;}
+/* int mono_mprotect(void){return 0;}  -- now real (mono-mmap-windows.c / win32_supplement.c) */
+/* int mono_pagesize(void){return 0;}  -- now real (mono-mmap-windows.c) */
+/* int mono_shared_area(void){return 0;}  -- now real (mono-mmap-windows.c) */
+/* int mono_shared_area_for_pid(void){return 0;}  -- now real (mono-mmap-windows.c) */
+/* int mono_shared_area_instances(void){return 0;}  -- now real (mono-mmap-windows.c) */
+/* int mono_shared_area_unload(void){return 0;}  -- now real (mono-mmap-windows.c) */
+/* int mono_valloc(void){return 0;}  -- now real (mono-mmap-windows.c / win32_supplement.c) */
+/* int mono_valloc_aligned(void){return 0;}  -- now real (mono-mmap-windows.c / win32_supplement.c) */
+/* int mono_valloc_granule(void){return 0;}  -- now real (mono-mmap-windows.c / win32_supplement.c) */
+/* int mono_vfree(void){return 0;}  -- now real (mono-mmap-windows.c / win32_supplement.c) */
 int ves_icall_System_Environment_BroadcastSettingChange(void){return 0;}
