@@ -56,8 +56,70 @@ today, verified on xemu:
 
 ## Build & run
 
-Each `scripts/build-*.sh` compiles one layer (they don't auto-chain). Typical order after a clean
-checkout, and what to re-run after editing a given area:
+### Prerequisites
+
+All builds run from **Git Bash** (the scripts are `bash`, invoked as `bash scripts/build-*.sh`).
+Required on the machine:
+
+- **RXDK toolchain** at `C:\ProgramData\RXDK\llvm\xboxog-windows-x64` — clang 23 (targets
+  `i686-pc-windows-gnu`, `-march=pentium3`), `ld.lld`, `llvm-lib`, and the compiler-rt builtins
+  (`lib/clang/23/lib/windows/libclang_rt.builtins-i386.a`).
+- **RXDK SDK** at `C:\ProgramData\RXDK\sdk` — headers (`include/`) and the prebuilt import libs
+  (`lib/`: `libxapi`, `libkernel`, `libc`, `libcpp`, `libcompat`, `libd3d8`, …).
+- **RXDK tools** at `C:\ProgramData\RXDK\tools` — `imagebld.exe` (PE→XBE) and `xdvdfs.exe` (→ISO).
+- **.NET SDK** with Roslyn — the scripts call `csc.dll` at
+  `C:\Program Files\dotnet\sdk\10.0.400\Roslyn\bincore\csc.dll` (adjust the version in the scripts if
+  yours differs) to build the managed assemblies with `-nostdlib`.
+- **Submodules**: `vendor/mono` (checked out on the **`xbox`** branch) plus its `external/corefx`,
+  `external/corert`, `external/referencesource` (corlib/System.Core pull sources from these).
+  `build-corlib.sh` auto-inits them on first run; otherwise:
+  `git submodule update --init && git -C vendor/mono submodule update --init --depth 1 external/corefx external/corert external/referencesource`.
+- **[xemu](https://xemu.app)** devkit build to run the result (see *Running on xemu* below).
+
+There is **no autotools/CMake** — the scripts bypass Mono's build system and compile hand-picked
+source subsets against a hand-written `build/generated/mono/config.h` and the PAL headers in
+`pal/include/`. Native output is gated by an **isa-scan** in CI that fails on any post-PIII (SSE2+)
+instruction.
+
+### How a layer compiles
+
+Every native layer uses the same recipe (see any `scripts/build-*.sh`): clang with
+`-target i686-pc-windows-gnu -march=pentium3 -ffreestanding -femulated-tls -fms-extensions`,
+force-including `config.h` + the PAL shim headers (`-include build/generated/mono/config.h -include
+pal/include/rxdk/win32_supplement.h …`), compiling each `.c` to a `.o`, then archiving the objects
+into `build-out/lib/lib*.lib` with `llvm-lib`. Each script prints a per-file pass/fail tally and the
+distinct first errors, so a partial failure is visible without scrolling. Managed layers instead
+invoke Roslyn (`csc.dll`) with `-nostdlib` against our own `mscorlib.dll`.
+
+`build-host.sh` is the final step: it compiles the PAL glue + embedding host, **links** everything
+with `ld.lld` (loose PAL objects, then the archives in a `--start-group`, then the SDK import libs,
+then the builtins and `mono_stubs.o`, with `--allow-multiple-definition`) into `mono-host.exe` (a
+PE), converts it to an XBE with `imagebld`, and packs `iso/RxdkMonoHost/` into a bootable ISO with
+`xdvdfs`. Output: `build-out/obj/host/RxdkMonoHost.iso`.
+
+### Full build from a clean checkout
+
+Run in this order (native libs first, then the managed assemblies, then link+package):
+
+```bash
+bash scripts/build-eglib.sh      # libeglib.lib      (monoeg_g_*)
+bash scripts/build-utils.sh      # libmonoutils.lib  (incl. mono-dl)
+bash scripts/build-metadata.sh   # libmonoruntime.lib (sgen + metadata; slowest, ~2–3 min)
+bash scripts/build-mini.sh       # libmini.lib       (JIT + interpreter)
+bash scripts/build-corlib.sh     # mscorlib.dll      (Roslyn; auto-inits submodules on first run)
+bash scripts/build-syscore.sh    # System.Core.dll   (minimal LINQ; needs mscorlib.dll)
+bash scripts/build-testasm.sh    # Test.dll          (self-test; needs mscorlib.dll)
+bash scripts/build-minitests.sh  # mini-*.dll        (official suite; needs mscorlib + System.Core)
+bash scripts/build-host.sh       # link XBE + pack RxdkMonoHost.iso
+```
+
+Intermediate objects land in `build-out/obj/<layer>/`, archives in `build-out/lib/`, managed
+assemblies in `build-out/corlib/`, and the final XBE/ISO in `build-out/obj/host/`.
+
+### Rebuilding incrementally
+
+Each `scripts/build-*.sh` compiles one layer (they don't auto-chain). After editing a given area,
+re-run its layer **and** `build-host.sh` (to relink/repack):
 
 | Script | Builds | Re-run when you touch | Approx |
 |---|---|---|---|
