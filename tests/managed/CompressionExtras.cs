@@ -1,4 +1,4 @@
-// Types DeflateStream.cs needs that live in System.dll on desktop Mono. Compiled into Test.dll
+// Types DeflateStream.cs needs that live in System.dll on desktop Mono. Compiled into Main.dll
 // so the on-device suite can round-trip DeflateStream and GZipStream without building System.dll.
 // GZipStream is the Mono wrapper: gzip=true selects windowBits 31 in zlib-helper.c.
 using System;

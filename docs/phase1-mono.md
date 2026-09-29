@@ -1,8 +1,7 @@
 # Phase 1 — cross-building the Mono runtime for the original Xbox
 
 Concrete build plan for standing up `libmono` on the Xbox target. Synthesised from a survey of
-`vendor/mono` (Mono **6.13.0**, branch `xbox`) + the RXDK build mechanics. Supersedes the
-placeholder in `port-plan.md` §8 Phase 1.
+`vendor/mono` (Mono **6.13.0**, branch `xbox`) + the RXDK build mechanics.
 
 ## Strategy in one paragraph
 
@@ -19,7 +18,7 @@ clang, sidestepping all JIT codegen risk. The x87 JIT (spike-green) is a later o
 ## Why interp-first (recap + caveat)
 
 - Robust bring-up: no managed-method codegen at all → no SSE2 risk for managed code, and it's the
-  same engine the net8 phase will use (`port-plan.md` §4).
+  same engine a later runtime on this CPU would use.
 - **Caveat (survey finding): the interpreter is not standalone.** `interp.c` calls
   `mono_arch_get_interp_to_native_trampoline`, `mono_arch_{set,get}_native_call_context_*`, and
   `mono_jit_compile_method_jit_only` (marshaling wrappers). So an interp-only build **still links
@@ -82,7 +81,7 @@ in-source `#if HOST_WIN32`. The Win32 backend files already exist:
   call (we control startup; there is no DllMain in a static XBE).
 - **`VirtualAlloc`/`VirtualProtect`/`VirtualFree`** — must honour reserve-vs-commit and W^X
   (SGen and the interp's code-manager depend on it). `libxapi` provides them; verify semantics
-  against `Nt*VirtualMemory` (`port-plan.md` §3).
+  against `Nt*VirtualMemory`.
 
 ## Freestanding hazards (survey) + mitigations
 

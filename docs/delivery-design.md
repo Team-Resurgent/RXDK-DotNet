@@ -5,7 +5,7 @@ C# project with one command (or one click) and never touches clang / lld / image
 internals.** They write C#, run a build, and get a bootable `.xbe` / `.iso`.
 
 This is a forward-looking design; it's recorded now because it shapes how the runtime and
-tooling are structured (see also `port-plan.md`).
+tooling are structured.
 
 ## The pipeline we're hiding
 
@@ -66,7 +66,7 @@ work is the middle: turn IL + the Mono-for-Xbox runtime into something that engi
 
 ## AOT vs interpreter has a *delivery* dimension (not just perf)
 
-This is worth weighing alongside the perf/memory tradeoff in `port-plan.md` §4:
+The interpreter and an AOT compiler also differ in how they ship:
 
 - **Interpreter delivery is simpler & more portable.** The host side is just `dotnet build`
   (C#→IL, already cross-platform) + bundle IL into the image. **No per-host cross-compiler.**
@@ -78,8 +78,7 @@ This is worth weighing alongside the perf/memory tradeoff in `port-plan.md` §4:
 
 So: **interpreter is the easier thing to deliver cross-platform**, AOT is the faster thing to
 run. A likely end state is **AOT with an interpreter fallback**, but the interpreter is the
-lower-friction first delivery — which also lines up with the net8 direction (net8 is
-interpreter-only on this CPU anyway; `port-plan.md` §4).
+lower-friction first delivery — which also lines up with an interpreter-only runtime on this CPU.
 
 ## Guiding principle
 

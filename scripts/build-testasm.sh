@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # RXDK-DotNet — build the minimal managed test assembly (tests/managed/Test.cs) with Roslyn,
-# referencing our own classic-Mono mscorlib.dll (/nostdlib). Output: build-out/corlib/Test.dll,
+# referencing our own classic-Mono mscorlib.dll (/nostdlib). Output: build-out/corlib/Main.dll,
 # bundled onto the DVD next to mscorlib so the interpreter can load and run it.
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -24,10 +24,10 @@ RSP="$OUT/testasm.rsp"
 {
   echo "-nostdlib"
   echo "-noconfig"
-  echo "-target:library"
+  echo "-target:exe"
   echo "-optimize+"
   echo "-unsafe"
-  echo "-out:$(cygpath -w "$OUT/Test.dll")"
+  echo "-out:$(cygpath -w "$OUT/Main.dll")"
   echo "-reference:$(cygpath -w "$CORLIB")"
   echo "-reference:$(cygpath -w "$OUT/System.dll")"
   echo "$(cygpath -w "$SRC")"
@@ -35,9 +35,9 @@ RSP="$OUT/testasm.rsp"
   echo "$(cygpath -w "$ROOT/vendor/mono/mcs/class/System/System.IO.Compression/DeflateStream.cs")"
 } > "$RSP"
 
-echo "== compiling Test.dll with Roslyn =="
+echo "== compiling Main.dll with Roslyn =="
 MSYS2_ARG_CONV_EXCL='*' dotnet exec "$(cygpath -w "$CSC")" "@$(cygpath -w "$RSP")" > "$OUT/testasm.log" 2>&1
 rc=$?
 echo "csc exit $rc"
-[ "$rc" = "0" ] && ls -la "$OUT/Test.dll" | awk '{print "Test.dll:", $5, "bytes"}' || { echo "-- errors --"; grep -iE 'error' "$OUT/testasm.log" | head; }
+[ "$rc" = "0" ] && ls -la "$OUT/Main.dll" | awk '{print "Main.dll:", $5, "bytes"}' || { echo "-- errors --"; grep -iE 'error' "$OUT/testasm.log" | head; }
 exit $rc

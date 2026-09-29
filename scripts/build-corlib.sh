@@ -11,8 +11,8 @@ OUT="$ROOT/build-out/corlib"; mkdir -p "$OUT"
 # corlib pulls its core System.* types from mono's external/corefx submodule — ensure it's present
 # (dropped errors 41422 -> 1254 in the Phase-1b spike).
 if [ ! -f "$CORLIB/../../../external/corert/src/System.Private.CoreLib/shared/System/Threading/CancellationToken.cs" ]; then
-  echo "== init external corefx/corert/referencesource submodules =="
-  git -C "$ROOT/vendor/mono" submodule update --init --depth 1 external/corefx external/corert external/referencesource 2>&1 | tail -3
+  echo "== init external corefx/corert submodules =="
+  git -C "$ROOT/vendor/mono" submodule update --init --depth 1 external/corefx external/corert 2>&1 | tail -3
 fi
 
 # Consts.cs is generated from Consts.cs.in (MonoCorlibVersion must match the runtime).

@@ -129,7 +129,7 @@ below corlib now works on real-Xbox HLE:
   (`FORMAT_MESSAGE_*`, `MWMO_*`, `SEM_*`, `FILE_MAP_*`, `COINIT_*`, …) + link shims
   (`CreateSemaphoreW`, `SetErrorMode`, `MsgWaitForMultipleObjectsEx`, dynamic-loading/COM/VEH stubs).
   The earlier `'CreateSemaphore … not supported'` crash is gone.
-- **corlib built + bundled:** `mscorlib.dll` in the ISO at `D:\assy\`; `mono_set_assemblies_path`
+- **corlib built + bundled:** `mscorlib.dll` in the ISO at `D:\assemblies\`; `mono_set_assemblies_path`
   points there (and the `g_file_test` warning is non-fatal — assembly.c keeps the path).
 
 **The remaining blocker — RXDK's WIDE (W) Win32 file APIs are broken; Mono (UNICODE) uses them.**

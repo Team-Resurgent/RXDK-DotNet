@@ -41,7 +41,7 @@ jobs:
         run: |
           set -euo pipefail
           git -C vendor/mono submodule update --init --depth 1 \
-            external/corefx external/corert external/referencesource
+            external/corefx external/corert
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -97,7 +97,7 @@ jobs:
           for f in libeglib.lib libmonoutils.lib libmonoruntime.lib libmini.lib; do
             test -f "build-out/lib/$f"
           done
-          for f in mscorlib.dll System.dll System.Core.dll generics-variant-types.dll Test.dll; do
+          for f in mscorlib.dll System.dll System.Core.dll generics-variant-types.dll Main.dll; do
             test -f "build-out/corlib/$f"
           done
           n=$(ls build-out/corlib/mini-*.dll | wc -l | tr -d '[:space:]')
@@ -116,10 +116,10 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Force -Path dist/runtime/lib, dist/runtime/assy | Out-Null
+          New-Item -ItemType Directory -Force -Path dist/runtime/lib, dist/runtime/assemblies | Out-Null
           Copy-Item build-out/lib/*.lib dist/runtime/lib
-          Copy-Item build-out/corlib/*.dll dist/runtime/assy
-          Compress-Archive -Path dist/runtime/lib, dist/runtime/assy -DestinationPath dist/rxdk-dotnet-runtime.zip -Force
+          Copy-Item build-out/corlib/*.dll dist/runtime/assemblies
+          Compress-Archive -Path dist/runtime/lib, dist/runtime/assemblies -DestinationPath dist/rxdk-dotnet-runtime.zip -Force
           Copy-Item build-out/obj/host/RxdkMonoHost.iso dist/RxdkMonoHost.iso
           Copy-Item build-out/obj/host/mono-host.xbe dist/RxdkMonoHost.xbe
           Remove-Item -Recurse -Force dist/runtime
@@ -196,6 +196,6 @@ jobs:
 
             - `RxdkMonoHost.iso` — boot on xemu (`-dvd_path` this file, `-device lpc47m157 -serial stdio`)
             - `RxdkMonoHost.xbe` — the title image inside that ISO
-            - `rxdk-dotnet-runtime.zip` — `lib/` (libeglib, libmonoutils, libmonoruntime, libmini) and `assy/` (mscorlib, System, System.Core, the self-test, and the mini suites)
+            - `rxdk-dotnet-runtime.zip` — `lib/` (libeglib, libmonoutils, libmonoruntime, libmini) and `assemblies/` (mscorlib, System, System.Core, and Main.dll)
           files: |
             dist/*

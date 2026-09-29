@@ -11,6 +11,14 @@ using System.Collections.Generic;
 // Redirect managed Console output to the Xbox debug UART. A single native internal call (Write) is
 // the sink; everything else is idiomatic managed code, so Console.WriteLine "just works" for the
 // test suite and for real apps. Console.SetOut is done in Install().
+public class Program
+{
+    public static int Main(string[] args)
+    {
+        return RxdkTest.RunAll();
+    }
+}
+
 public static class RxdkConsole
 {
     [MethodImpl(MethodImplOptions.InternalCall)] public static extern void Write(string s);
@@ -66,32 +74,32 @@ public static class RxdkTest
 
     static bool T_Console()   { System.Console.WriteLine("[console] managed Console.WriteLine works"); return true; }
     // File I/O over the real Win32 file layer (w32file-win32.c + W->A thunks). Reads from the DVD
-    // (D:\assy, bundled next to the host); the title drive is read-only when booted from disc.
+    // (D:\assemblies, bundled next to the host); the title drive is read-only when booted from disc.
     // FileStream is Mono's (MonoIO -> mono_w32file_* -> w32file-win32.c + W->A thunks).
     static bool T_FileStream()
     {
         byte[] head = new byte[2]; int n;
-        using (var fs = new FileStream("D:\\assy\\mscorlib.dll", FileMode.Open, FileAccess.Read))
+        using (var fs = new FileStream("D:\\assemblies\\mscorlib.dll", FileMode.Open, FileAccess.Read))
         { n = fs.Read(head, 0, 2); }
         return n == 2 && head[0] == (byte)'M' && head[1] == (byte)'Z';
     }
     // File/Directory are corefx (direct kernel32 P/Invokes via the mono_dl fallback).
-    static bool T_FileExists() { return File.Exists("D:\\assy\\mscorlib.dll") && !File.Exists("D:\\assy\\nope.xyz"); }
+    static bool T_FileExists() { return File.Exists("D:\\assemblies\\mscorlib.dll") && !File.Exists("D:\\assemblies\\nope.xyz"); }
     // Directory.Exists uses GetFileAttributesExW (works). Directory.GetFiles/enumeration goes through
     // corefx's ntdll NtQueryDirectoryFile path, which isn't wired yet (known follow-up), so it's not
     // exercised here.
-    static bool T_DirExists() { return Directory.Exists("D:\\assy") && !Directory.Exists("D:\\assy\\nope"); }
+    static bool T_DirExists() { return Directory.Exists("D:\\assemblies") && !Directory.Exists("D:\\assemblies\\nope"); }
     // Directory.GetFiles opens the directory (FILE_FLAG_BACKUP_SEMANTICS -> NtCreateFile) and pages
     // entries with NtQueryDirectoryFile. FileInfo.Length reads the size GetFileAttributesExW fills.
     static bool T_GetFiles()
     {
-        string[] files = Directory.GetFiles("D:\\assy");
+        string[] files = Directory.GetFiles("D:\\assemblies");
         bool saw = false;
         for (int i = 0; i < files.Length; i++)
             if (files[i].IndexOf("mscorlib.dll") >= 0) saw = true;
         return files.Length > 0 && saw;
     }
-    static bool T_FileLength() { return new FileInfo("D:\\assy\\mscorlib.dll").Length > 1000; }
+    static bool T_FileLength() { return new FileInfo("D:\\assemblies\\mscorlib.dll").Length > 1000; }
     // BCryptGenRandom is a KeTickCount-seeded xorshift. Guid.NewGuid must not be Empty and must not repeat.
     static bool T_Culture()
     {

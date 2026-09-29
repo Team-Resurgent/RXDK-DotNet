@@ -30,17 +30,13 @@ typedef struct _MonoMethod MonoMethod;
 typedef struct _MonoObject MonoObject;
 typedef struct _MonoString MonoString;
 extern MonoImage  *mono_assembly_get_image(MonoAssembly *assembly);
-extern MonoClass  *mono_class_from_name(MonoImage *image, const char *name_space, const char *name);
-extern MonoMethod *mono_class_get_method_from_name(MonoClass *klass, const char *name, int param_count);
-/* Entry-point lookup: the mini tests are EXEs, so we invoke Main via the assembly's entry token
- * (class name varies: Tests, BuiltinTests, DevirtualizationTests, ...). */
+/* Entry-point lookup: Main.dll and the mini tests are EXEs, so we invoke Main via the assembly
+ * entry token (the class name is whatever the compiler picked). */
 extern unsigned int mono_image_get_entry_point(MonoImage *image);
 extern MonoMethod  *mono_get_method(MonoImage *image, unsigned int token, MonoClass *klass);
-extern MonoObject *mono_runtime_invoke(MonoMethod *method, void *obj, void **params, MonoObject **exc);
 /* Builds the managed string[] from argv (argv[0] is the program name, argv[1..] become Main's args)
  * and invokes Main, returning its int exit code. Used to pass "--time" to the mini-test driver. */
 extern int         mono_runtime_run_main(MonoMethod *method, int argc, char *argv[], MonoObject **exc);
-extern void       *mono_object_unbox(MonoObject *obj);
 extern MonoClass  *mono_object_get_class(MonoObject *obj);
 extern const char *mono_class_get_name(MonoClass *klass);
 extern MonoString *mono_object_to_string(MonoObject *obj, MonoObject **exc);
@@ -87,35 +83,44 @@ static void rxdk_print_int(const char *label, int v)
     OutputDebugStringA(b); OutputDebugStringA("\n");
 }
 
-/* Load the test assembly and interpret a couple of static methods — the first managed IL executed
- * on the Xbox. Pure arithmetic (Add, Fib) so success is a clean signal the interpreter works. */
+/* Load D:\assemblies\Main.dll and run its assembly entry point: static int Main(string[] args).
+ * argv[0] is the program name and is not passed through to Main. */
 static void rxdk_run_managed(void)
 {
     int st = 0;
     MonoAssembly *asmb;
     MonoImage *img;
-    MonoClass *klass;
-    MonoMethod *runall;
-    MonoObject *res, *exc;
+    MonoMethod *entry;
+    unsigned int tok;
+    MonoObject *exc = 0;
+    int code;
+    char *argv[1];
 
     /* Register the serial sink for managed Console output before any managed code runs. */
     mono_add_internal_call("RxdkConsole::Write", (const void *)rxdk_console_write);
 
-    OutputDebugStringA("RXDK-DotNet: loading D:\\assy\\Test.dll\n");
-    asmb = mono_assembly_open("D:\\assy\\Test.dll", &st);
-    if (!asmb) { OutputDebugStringA("RXDK-DotNet: Test.dll load FAILED\n"); return; }
+    OutputDebugStringA("RXDK-DotNet: loading D:\\assemblies\\Main.dll\n");
+    asmb = mono_assembly_open("D:\\assemblies\\Main.dll", &st);
+    if (!asmb) { OutputDebugStringA("RXDK-DotNet: Main.dll load FAILED\n"); return; }
     img = mono_assembly_get_image(asmb);
-    klass = mono_class_from_name(img, "", "RxdkTest");
-    if (!klass) { OutputDebugStringA("RXDK-DotNet: class RxdkTest not found\n"); return; }
-    runall = mono_class_get_method_from_name(klass, "RunAll", 0);
-    if (!runall) { OutputDebugStringA("RXDK-DotNet: RunAll not found\n"); return; }
+    tok = mono_image_get_entry_point(img);
+    if (!tok) { OutputDebugStringA("RXDK-DotNet: Main.dll has no Main entry point\n"); return; }
+    entry = mono_get_method(img, tok, 0);
+    if (!entry) { OutputDebugStringA("RXDK-DotNet: Main method not found\n"); return; }
 
-    OutputDebugStringA("RXDK-DotNet: invoking RxdkTest.RunAll() (managed self-test)\n");
-    exc = 0;
-    res = mono_runtime_invoke(runall, 0, (void **)0, &exc);
-    if (exc) { OutputDebugStringA("RXDK-DotNet: RunAll threw an exception\n"); return; }
-    rxdk_print_int("RXDK-DotNet: RunAll failures = ", res ? *(int *)mono_object_unbox(res) : -1);
-    OutputDebugStringA("RXDK-DotNet: managed self-test complete\n");
+    argv[0] = "Main.dll";
+    OutputDebugStringA("RXDK-DotNet: invoking Main\n");
+    code = mono_runtime_run_main(entry, 1, argv, &exc);
+    if (exc) {
+        MonoClass *ec = mono_object_get_class(exc);
+        const char *en = ec ? mono_class_get_name(ec) : 0;
+        OutputDebugStringA("RXDK-DotNet: Main threw: ");
+        OutputDebugStringA(en ? en : "(unknown)");
+        OutputDebugStringA("\n");
+        return;
+    }
+    rxdk_print_int("RXDK-DotNet: Main returned ", code);
+    OutputDebugStringA("RXDK-DotNet: managed program complete\n");
 }
 /* Run one official Mono JIT regression assembly (mini-<name>.dll, built by build-minitests.sh).
  * Each defines `class Tests` with `static int Main(string[])` -> TestDriver.RunTests, returning the
@@ -169,21 +174,21 @@ static int rxdk_run_minitest(const char *name, const char *path)
 static void rxdk_run_all_minitests(void)
 {
     static const char *tests[] = {
-        "basic",           "D:\\assy\\mini-basic.dll",
-        "basic-long",      "D:\\assy\\mini-basic-long.dll",
-        "basic-float",     "D:\\assy\\mini-basic-float.dll",
-        "basic-math",      "D:\\assy\\mini-basic-math.dll",
-        "arrays",          "D:\\assy\\mini-arrays.dll",
-        "objects",         "D:\\assy\\mini-objects.dll",
-        "exceptions",      "D:\\assy\\mini-exceptions.dll",
-        "builtin-types",   "D:\\assy\\mini-builtin-types.dll",
-        "devirtualization","D:\\assy\\mini-devirtualization.dll",
-        "generics",        "D:\\assy\\mini-generics.dll",
-        "gshared",         "D:\\assy\\mini-gshared.dll",
-        "ratests",         "D:\\assy\\mini-ratests.dll",
-        "basic-calls",     "D:\\assy\\mini-basic-calls.dll",
-        "mixed",           "D:\\assy\\mini-mixed.dll",
-        "gc-test",         "D:\\assy\\mini-gc-test.dll",
+        "basic",           "D:\\assemblies\\mini-basic.dll",
+        "basic-long",      "D:\\assemblies\\mini-basic-long.dll",
+        "basic-float",     "D:\\assemblies\\mini-basic-float.dll",
+        "basic-math",      "D:\\assemblies\\mini-basic-math.dll",
+        "arrays",          "D:\\assemblies\\mini-arrays.dll",
+        "objects",         "D:\\assemblies\\mini-objects.dll",
+        "exceptions",      "D:\\assemblies\\mini-exceptions.dll",
+        "builtin-types",   "D:\\assemblies\\mini-builtin-types.dll",
+        "devirtualization","D:\\assemblies\\mini-devirtualization.dll",
+        "generics",        "D:\\assemblies\\mini-generics.dll",
+        "gshared",         "D:\\assemblies\\mini-gshared.dll",
+        "ratests",         "D:\\assemblies\\mini-ratests.dll",
+        "basic-calls",     "D:\\assemblies\\mini-basic-calls.dll",
+        "mixed",           "D:\\assemblies\\mini-mixed.dll",
+        "gc-test",         "D:\\assemblies\\mini-gc-test.dll",
     };
     int i, n = (int)(sizeof(tests) / sizeof(tests[0])) / 2;
     int total_failed = 0, files_run = 0, files_err = 0;
@@ -213,11 +218,10 @@ void __cdecl main(void)
     /* D: is already the title drive (DVD when booted from disc; the title's dir from HDD) — don't
      * force-remap it. Just probe which path convention GetFileAttributes actually resolves. */
     OutputDebugStringA("RXDK-DotNet: file-access probe:\n");
-    test_path("D:\\mscorlib.dll");
-    test_path("D:\\assy\\mscorlib.dll");
-    test_path("\\Device\\CdRom0\\assy\\mscorlib.dll");
-    test_path("\\??\\D:\\assy\\mscorlib.dll");
-    test_path("D:\\assy");
+    test_path("D:\\assemblies\\mscorlib.dll");
+    test_path("\\Device\\CdRom0\\assemblies\\mscorlib.dll");
+    test_path("\\??\\D:\\assemblies\\mscorlib.dll");
+    test_path("D:\\assemblies");
     test_path("D:\\");
     /* T: is the title's persistent HDD partition (writable; D: is the read-only DVD). The managed
      * write tests target T:\rxdk-write.txt — this line says whether the volume is mounted. */
@@ -240,7 +244,7 @@ void __cdecl main(void)
         OutputDebugStringA("RXDK-DotNet: "); OutputDebugStringA(b);
     }
 
-    mono_set_assemblies_path("D:\\assy");
+    mono_set_assemblies_path("D:\\assemblies");
 
     /* Resolve the corlib P/Invokes into kernel32.dll (e.g. TimeZoneInfo -> GetTimeZoneInformation,
      * for DateTime.Now) to our linked-in implementations, since the Xbox has no dynamic loading. */
