@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Set RxdkRuntimeDir to the folder holding assemblies/ from rxdk-dotnet-runtime.zip.
+       Left unset it uses build-out/ from a checkout of this repo. -->
+  <Import Project="../../msbuild/Rxdk.Title.props" />
+
+  <Import Project="../../msbuild/Rxdk.Title.targets" />
+
+</Project>

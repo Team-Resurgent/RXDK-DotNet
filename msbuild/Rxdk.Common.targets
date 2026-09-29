@@ -1,0 +1,22 @@
+<Project>
+
+  <!--
+    References shared by an Xbox title and an Xbox library. Import Rxdk.Title.targets or
+    Rxdk.Library.targets rather than this file.
+  -->
+
+  <ItemGroup Condition="'$(RxdkAssembliesDir)' != ''">
+    <!-- Reference every runtime assembly by path. Unused references do not reach the output.
+         mini-*.dll and Main.dll are the runtime's own test suites and the title itself. -->
+    <Reference Include="$(RxdkAssembliesDir)/*.dll"
+               Exclude="$(RxdkAssembliesDir)/Main.dll;$(RxdkAssembliesDir)/mini-*.dll;$(RxdkAssembliesDir)/Test.dll">
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="RxdkCheckRuntime">
+    <Error Condition="!Exists('$(RxdkAssembliesDir)/mscorlib.dll')"
+           Text="mscorlib.dll not found under '$(RxdkAssembliesDir)'. Unzip rxdk-dotnet-runtime.zip and set RxdkRuntimeDir to the folder holding assemblies/." />
+  </Target>
+
+</Project>

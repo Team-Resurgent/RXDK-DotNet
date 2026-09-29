@@ -1,0 +1,40 @@
+<Project>
+
+  <!--
+    Compile shape shared by an Xbox title and an Xbox library. Import Rxdk.Title.props or
+    Rxdk.Library.props rather than this file; they differ only in output kind and name.
+
+    The TargetFramework only selects the Roslyn behaviour; none of its reference
+    assemblies are used. DisableImplicitFrameworkReferences and NoStdLib drop the
+    .NET framework reference so mscorlib.dll from the runtime is the only corlib, and
+    UseAppHost stops the SDK looking for a native launcher that has no meaning here.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework Condition="'$(TargetFramework)' == ''">net8.0</TargetFramework>
+
+    <NoStdLib>true</NoStdLib>
+    <NoConfig>true</NoConfig>
+    <DisableImplicitFrameworkReferences>true</DisableImplicitFrameworkReferences>
+    <UseAppHost>false</UseAppHost>
+    <SelfContained>false</SelfContained>
+
+    <!-- The SDK would otherwise emit attributes and side files the console cannot use. -->
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <GenerateRuntimeConfigurationFiles>false</GenerateRuntimeConfigurationFiles>
+    <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <DebugType Condition="'$(DebugType)' == ''">none</DebugType>
+    <AllowUnsafeBlocks Condition="'$(AllowUnsafeBlocks)' == ''">true</AllowUnsafeBlocks>
+
+    <!-- In-repo default so the samples build straight from a checkout. -->
+    <RxdkRuntimeDir Condition="'$(RxdkRuntimeDir)' == ''">$(MSBuildThisFileDirectory)../build-out</RxdkRuntimeDir>
+    <RxdkAssembliesDir Condition="'$(RxdkAssembliesDir)' == '' and Exists('$(RxdkRuntimeDir)/assemblies')">$(RxdkRuntimeDir)/assemblies</RxdkAssembliesDir>
+    <RxdkAssembliesDir Condition="'$(RxdkAssembliesDir)' == ''">$(RxdkRuntimeDir)/corlib</RxdkAssembliesDir>
+  </PropertyGroup>
+
+</Project>

@@ -46,7 +46,10 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          # 8.0 runs dotnet-mgcb, which the MonoGame sample's content build installs.
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Stage RXDK clang, SDK, and host tools
         shell: pwsh
@@ -105,17 +108,19 @@ jobs:
           bash scripts/build-mini.sh
           bash scripts/build-corlib.sh
           bash scripts/build-syscore.sh
+          bash scripts/build-bcl.sh
           bash scripts/build-input.sh
           bash scripts/build-kernel.sh
           bash scripts/build-graphics.sh
           bash scripts/build-sdklibs.sh
+          bash scripts/build-monogame.sh
           bash scripts/build-testasm.sh
           bash scripts/build-minitests.sh
           bash scripts/build-host.sh
           for f in libeglib.lib libmonoutils.lib libmonoruntime.lib libmini.lib; do
             test -f "build-out/lib/$f"
           done
-          for f in mscorlib.dll System.dll System.Core.dll generics-variant-types.dll Rxdk.Input.dll Rxdk.Kernel.dll Rxdk.Graphics.dll Rxdk.Audio.dll Rxdk.Music.dll Rxdk.Xact.dll Rxdk.Video.dll Rxdk.Uix.dll Rxdk.Online.dll Rxdk.Voice.dll Main.dll; do
+          for f in mscorlib.dll System.dll System.Core.dll System.Numerics.Vectors.dll System.Runtime.Serialization.dll MonoGame.Framework.dll generics-variant-types.dll Rxdk.Input.dll Rxdk.Kernel.dll Rxdk.Graphics.dll Rxdk.Audio.dll Rxdk.Music.dll Rxdk.Xact.dll Rxdk.Video.dll Rxdk.Uix.dll Rxdk.Online.dll Rxdk.Voice.dll Main.dll; do
             test -f "build-out/corlib/$f"
           done
           n=$(ls build-out/corlib/mini-*.dll | wc -l | tr -d '[:space:]')
@@ -160,10 +165,63 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist/runtime/lib, dist/runtime/assemblies | Out-Null
           Copy-Item build-out/lib/*.lib dist/runtime/lib
           Copy-Item build-out/corlib/*.dll dist/runtime/assemblies
-          Compress-Archive -Path dist/runtime/lib, dist/runtime/assemblies -DestinationPath dist/rxdk-dotnet-runtime.zip -Force
+          # A consumer needs the props/targets to build a title project against this runtime.
+          New-Item -ItemType Directory -Force -Path dist/runtime/msbuild | Out-Null
+          Copy-Item msbuild/*.props, msbuild/*.targets dist/runtime/msbuild
+          Compress-Archive -Path dist/runtime/lib, dist/runtime/assemblies, dist/runtime/msbuild -DestinationPath dist/rxdk-dotnet-runtime.zip -Force
           Copy-Item build-out/obj/host/RxdkMonoHost.iso dist/RxdkMonoHost.iso
           Copy-Item build-out/obj/host/mono-host.xbe dist/RxdkMonoHost.xbe
           Remove-Item -Recurse -Force dist/runtime
+
+      # Builds the sample the way a consumer does: against an unzipped release rather than the
+      # checkout's build-out. Covers the msbuild files, the zip layout, and the xdvdfs fetch.
+      - name: Build a title with dotnet build
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $runtime = Join-Path $env:RUNNER_TEMP 'rxdk-runtime'
+          Expand-Archive dist/rxdk-dotnet-runtime.zip -DestinationPath $runtime -Force
+          foreach ($f in 'msbuild/Rxdk.Title.props', 'msbuild/Rxdk.Title.targets', 'assemblies/mscorlib.dll') {
+            if (-not (Test-Path (Join-Path $runtime $f))) { throw "$f missing from rxdk-dotnet-runtime.zip" }
+          }
+          # RxdkXbe resolves to RxdkMonoHost.xbe beside assemblies/, which is where the release
+          # tells you to put it.
+          Copy-Item dist/RxdkMonoHost.xbe $runtime
+
+          dotnet build samples/HelloXbox/HelloXbox.csproj -t:RxdkPack -p:RxdkRuntimeDir=$runtime
+          if ($LASTEXITCODE -ne 0) { throw 'dotnet build of the sample title failed' }
+
+          $out = 'samples/HelloXbox/bin/Debug'
+          foreach ($f in "$out/Main.dll", "$out/disc/default.xbe", "$out/disc/assemblies/Main.dll", "$out/HelloXbox.iso") {
+            if (-not (Test-Path $f)) { throw "$f was not produced" }
+          }
+          # The host rejects a Main.dll with no entry point, so make sure it is not a library:
+          # IMAGE_FILE_DLL in the COFF characteristics, at e_lfanew + 4 + 18.
+          $bytes = [IO.File]::ReadAllBytes((Resolve-Path "$out/Main.dll"))
+          $coff = [BitConverter]::ToInt32($bytes, 0x3c) + 4
+          if ([BitConverter]::ToUInt16($bytes, $coff + 18) -band 0x2000) {
+            throw 'Main.dll was built as a library; the host needs an entry point'
+          }
+
+      # The MonoGame sample, also against the unzipped release. Its content goes through MGCB on
+      # the runner, so this covers the framework in the zip and the content staging too.
+      - name: Build the MonoGame sample title
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $runtime = Join-Path $env:RUNNER_TEMP 'rxdk-runtime'
+          $project = 'vendor/monogame-samples/Platformer2D/Platformer2D.Xbox'
+          dotnet build "$project/Platformer2D.Xbox.csproj" -t:RxdkPack -p:RxdkRuntimeDir=$runtime
+          if ($LASTEXITCODE -ne 0) { throw 'dotnet build of Platformer2D failed' }
+
+          $out = "$project/bin/Debug"
+          foreach ($f in "$out/Platformer2D.Xbox.iso", "$out/disc/default.xbe",
+                         "$out/disc/assemblies/Main.dll", "$out/disc/assemblies/MonoGame.Framework.dll",
+                         "$out/disc/Content/Levels/0.txt", "$out/disc/Content/Sprites/Gem.xnb") {
+            if (-not (Test-Path $f)) { throw "$f was not produced" }
+          }
 
       - name: Upload build
         uses: actions/upload-artifact@v4
@@ -237,6 +295,6 @@ jobs:
 
             - `RxdkMonoHost.iso` — boot on xemu (`-dvd_path` this file, `-device lpc47m157 -serial stdio`)
             - `RxdkMonoHost.xbe` — the title image inside that ISO
-            - `rxdk-dotnet-runtime.zip` — `lib/` (libeglib, libmonoutils, libmonoruntime, libmini) and `assemblies/` (mscorlib, System, System.Core, Rxdk.Input, Rxdk.Kernel, Rxdk.Graphics, Rxdk.Audio, Rxdk.Music, Rxdk.Xact, Rxdk.Video, Rxdk.Uix, Rxdk.Online, Rxdk.Voice, and Main.dll)
+            - `rxdk-dotnet-runtime.zip` — `lib/` (libeglib, libmonoutils, libmonoruntime, libmini), `assemblies/` (mscorlib, System, System.Core, System.Numerics.Vectors, System.Runtime.Serialization, MonoGame.Framework, Rxdk.Input, Rxdk.Kernel, Rxdk.Graphics, Rxdk.Audio, Rxdk.Music, Rxdk.Xact, Rxdk.Video, Rxdk.Uix, Rxdk.Online, Rxdk.Voice, and Main.dll), and `msbuild/` (import these from a .csproj to build and pack a title with `dotnet build`)
           files: |
             dist/*

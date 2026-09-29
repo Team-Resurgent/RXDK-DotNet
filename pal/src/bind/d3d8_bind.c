@@ -11,6 +11,7 @@
 #include <windef.h>
 #include <winbase.h>
 #include <xbox.h>
+#include <stdlib.h>
 #include <string.h>
 
 typedef struct {
@@ -49,6 +50,19 @@ extern void __attribute__((stdcall)) D3DDevice_SetViewport(const void *viewport)
 extern void __attribute__((stdcall)) D3DDevice_GetViewport(void *viewport);
 extern unsigned int D3D__RenderState[];
 extern void __attribute__((stdcall)) D3DDevice_SetRenderStateNotInline(int state, unsigned int value);
+/* On Xbox the sampler states are texture stage states: D3DTSS_MINFILTER and friends share the
+ * array with the fixed-function blend ops. D3DTSS_MAXSTAGES is 4 and D3DTSS_MAX is 32. */
+extern unsigned int D3D__TextureState[4][32];
+extern void __attribute__((stdcall)) D3DDevice_SetTextureStageStateNotInline(
+    unsigned int stage, int type, unsigned int value);
+/* D3DDevice_CreateRenderTarget and CreateDepthStencilSurface are inline in d3d8.h; both reach
+ * the same export with a different usage flag. D3DUSAGE_RENDERTARGET is 1, DEPTHSTENCIL is 2. */
+extern void *__attribute__((stdcall)) D3DDevice_CreateSurface2(
+    unsigned int width, unsigned int height, unsigned int usage, unsigned int format);
+extern void *__attribute__((stdcall)) D3DDevice_GetRenderTarget2(void);
+extern void *__attribute__((stdcall)) D3DDevice_GetDepthStencilSurface2(void);
+extern void __attribute__((stdcall)) D3DDevice_SetRenderTarget(void *color, void *depth);
+extern void __attribute__((stdcall)) D3DDevice_BlockUntilIdle(void);
 extern void *__attribute__((stdcall)) D3DDevice_CreateVertexBuffer2(unsigned int length);
 extern unsigned char *__attribute__((stdcall)) D3DVertexBuffer_Lock2(void *buffer, unsigned int flags);
 extern void __attribute__((stdcall)) D3DTexture_GetLevelDesc(void *texture, unsigned int level, void *desc);
@@ -360,9 +374,63 @@ static void rxdk_gfx_render_state(int state, unsigned int value)
     D3DDevice_SetRenderStateNotInline(state, value);
 }
 
+static unsigned int rxdk_gfx_get_texture_stage_state(int stage, int state)
+{
+    if (stage < 0 || stage >= 4 || state < 0 || state >= 32)
+        return 0;
+    return D3D__TextureState[stage][state];
+}
+
+static void rxdk_gfx_texture_stage_state(int stage, int state, unsigned int value)
+{
+    if (stage < 0 || stage >= 4)
+        return;
+    D3DDevice_SetTextureStageStateNotInline((unsigned int)stage, state, value);
+}
+
 static void *rxdk_gfx_create_vertex_buffer(int size)
 {
     return D3DDevice_CreateVertexBuffer2((unsigned int)size);
+}
+
+static void rxdk_gfx_sfence(void)
+{
+    __asm__ __volatile__("sfence" ::: "memory");
+}
+
+/* Morton order the NV2A sampler uses. Ordinary stores, so the result can be copied
+ * onto write-combined memory and fenced. XGSwizzleRect writes with movntps and never
+ * fences, which leaves the GPU sampling a mix of the new texels and the previous
+ * contents of the page. */
+static void rxdk_gfx_swizzle(const unsigned char *src, unsigned char *dst, int width, int height,
+    int bytes_per_pixel)
+{
+    unsigned int mask_x = 0, mask_y = 0, bit = 1, mask_bit = 1;
+    int x, y, off_y;
+
+    while (bit < (unsigned int)width || bit < (unsigned int)height) {
+        if (bit < (unsigned int)width) {
+            mask_x |= mask_bit;
+            mask_bit <<= 1;
+        }
+        if (bit < (unsigned int)height) {
+            mask_y |= mask_bit;
+            mask_bit <<= 1;
+        }
+        bit <<= 1;
+    }
+
+    off_y = 0;
+    for (y = 0; y < height; y++) {
+        int off_x = 0;
+        const unsigned char *row = src + (size_t)y * (size_t)width * (size_t)bytes_per_pixel;
+        for (x = 0; x < width; x++) {
+            memcpy(dst + ((size_t)off_y + (size_t)off_x) * (size_t)bytes_per_pixel,
+                row + (size_t)x * (size_t)bytes_per_pixel, (size_t)bytes_per_pixel);
+            off_x = (off_x - (int)mask_x) & (int)mask_x;
+        }
+        off_y = (off_y - (int)mask_y) & (int)mask_y;
+    }
 }
 
 static void rxdk_gfx_vertex_write(void *buffer, const void *src, int offset, int size)
@@ -372,6 +440,7 @@ static void rxdk_gfx_vertex_write(void *buffer, const void *src, int offset, int
         return;
     dst = D3DVertexBuffer_Lock2(buffer, 0);
     memcpy(dst + offset, src, (size_t)size);
+    rxdk_gfx_sfence();
 }
 
 static void *rxdk_gfx_create_index_buffer(int size)
@@ -394,13 +463,27 @@ static void *rxdk_gfx_create_texture(int width, int height, int format)
         (unsigned int)format, 3);
 }
 
-static void rxdk_gfx_texture_write(void *texture, const void *src, int width, int height,
-    int bytes_per_pixel, int linear)
+/* Mip-capable creation. rxdk_gfx_create_texture stays as the one-level case it always was. */
+static void *rxdk_gfx_create_texture_ex(int width, int height, int levels, int format)
+{
+    return D3DDevice_CreateTexture2((unsigned int)width, (unsigned int)height, 1,
+        (unsigned int)(levels <= 0 ? 1 : levels), 0, (unsigned int)format, 3);
+}
+
+/* Writes one mip level. A swizzled level goes through XGSwizzleRect; a linear one is copied row by
+ * row so the surface's own pitch is honoured. A compressed level uses the linear path, described as
+ * its grid of block rows: one byte per element, the row as long as that row of blocks is. */
+static void rxdk_gfx_texture_write_level(void *texture, int level, const void *src, int width,
+    int height, int bytes_per_pixel, int linear)
 {
     RxdkLockedRect locked;
     if (!texture || !src || width <= 0 || height <= 0)
         return;
-    D3DTexture_LockRect(texture, 0, &locked, NULL, 0);
+    D3DTexture_LockRect(texture, (unsigned int)level, &locked, NULL, 0);
+    /* LockRect is void on Xbox. A rejected lock comes back as a null pointer rather than a status,
+     * and writing through it would not land in the texture. */
+    if (!locked.bits || (linear && locked.pitch < width * bytes_per_pixel))
+        return;
     if (linear)
     {
         int y, row = width * bytes_per_pixel;
@@ -409,8 +492,44 @@ static void rxdk_gfx_texture_write(void *texture, const void *src, int width, in
                 (const unsigned char *)src + y * row, (size_t)row);
     }
     else
-        XGSwizzleRect(src, 0, NULL, locked.bits, (unsigned int)width, (unsigned int)height, NULL,
-            (unsigned int)bytes_per_pixel);
+    {
+        size_t bytes = (size_t)width * (size_t)height * (size_t)bytes_per_pixel;
+        unsigned char *swizzled = (unsigned char *)malloc(bytes);
+        if (!swizzled)
+            return;
+        rxdk_gfx_swizzle(src, swizzled, width, height, bytes_per_pixel);
+        memset(locked.bits, 0, bytes);
+        memcpy(locked.bits, swizzled, bytes);
+        free(swizzled);
+    }
+    rxdk_gfx_sfence();
+}
+
+static void rxdk_gfx_texture_write(void *texture, const void *src, int width, int height,
+    int bytes_per_pixel, int linear)
+{
+    rxdk_gfx_texture_write_level(texture, 0, src, width, height, bytes_per_pixel, linear);
+}
+
+/* Reads one mip level back out. Like the write above, a compressed level comes through the linear
+ * path framed as its grid of block rows. */
+static void rxdk_gfx_texture_read_level(void *texture, int level, void *dest, int width,
+    int height, int bytes_per_pixel, int linear)
+{
+    RxdkLockedRect locked;
+    if (!texture || !dest || width <= 0 || height <= 0)
+        return;
+    D3DTexture_LockRect(texture, (unsigned int)level, &locked, NULL, 0);
+    if (linear)
+    {
+        int y, row = width * bytes_per_pixel;
+        for (y = 0; y < height; y++)
+            memcpy((unsigned char *)dest + y * row,
+                (const unsigned char *)locked.bits + y * locked.pitch, (size_t)row);
+    }
+    else
+        XGUnswizzleRect(locked.bits, (unsigned int)width, (unsigned int)height, NULL, dest,
+            (unsigned int)(width * bytes_per_pixel), NULL, (unsigned int)bytes_per_pixel);
 }
 
 static void rxdk_gfx_release(void *resource)
@@ -424,8 +543,11 @@ static void rxdk_gfx_set_stream(void *buffer, int stride)
     D3DDevice_SetStreamSource(0, buffer, (unsigned int)stride);
 }
 
+static void *rxdk_gfx_bound_indices;
+
 static void rxdk_gfx_set_indices(void *buffer)
 {
+    rxdk_gfx_bound_indices = buffer;
     D3DDevice_SetIndices(buffer, 0);
 }
 
@@ -444,14 +566,59 @@ static void rxdk_gfx_draw(int type, int start, int count)
     D3DDevice_DrawVertices(type, (unsigned int)start, vertex_count(type, count));
 }
 
-static void rxdk_gfx_draw_indexed(int type, int start, int count)
+static void rxdk_gfx_draw_indexed(int type, int base_vertex, int start, int count)
 {
+    /* Sprite batches append into one vertex buffer and pass 0-based indices.
+     * DrawIndexedVertices adds m_IndexBase to those indices. Leaving the base at 0
+     * makes every batch after the first read the first batch's vertices, so later
+     * sprites show up with some other image's texels. */
+    D3DDevice_SetIndices(rxdk_gfx_bound_indices, (unsigned int)base_vertex);
     D3DDevice_DrawIndexedVertices(type, vertex_count(type, count), D3D__IndexData + start);
 }
 
 static void rxdk_gfx_clear(unsigned int flags, unsigned int color, float depth, unsigned int stencil)
 {
     D3DDevice_Clear(0, NULL, flags, color, depth, stencil);
+}
+
+/* D3DUSAGE_RENDERTARGET and D3DUSAGE_DEPTHSTENCIL from d3d8types.h. */
+static void *rxdk_gfx_create_render_target(int width, int height, int format)
+{
+    return D3DDevice_CreateSurface2((unsigned int)width, (unsigned int)height, 1, (unsigned int)format);
+}
+
+static void *rxdk_gfx_create_depth_stencil(int width, int height, int format)
+{
+    return D3DDevice_CreateSurface2((unsigned int)width, (unsigned int)height, 2, (unsigned int)format);
+}
+
+static void *rxdk_gfx_get_render_target(void)
+{
+    return D3DDevice_GetRenderTarget2();
+}
+
+static void *rxdk_gfx_get_depth_stencil(void)
+{
+    return D3DDevice_GetDepthStencilSurface2();
+}
+
+static void rxdk_gfx_set_render_target(void *color, void *depth)
+{
+    D3DDevice_SetRenderTarget(color, depth);
+}
+
+static void *rxdk_gfx_texture_surface(void *texture, int level)
+{
+    if (!texture)
+        return NULL;
+    return D3DTexture_GetSurfaceLevel2(texture, (unsigned int)level);
+}
+
+/* The GPU runs behind the CPU by a whole push buffer. Anything that reads a surface the GPU
+ * was just drawing into, such as resolving a render target, has to wait for it first. */
+static void rxdk_gfx_block_until_idle(void)
+{
+    D3DDevice_BlockUntilIdle();
 }
 
 static void rxdk_gfx_present(void)
@@ -619,11 +786,16 @@ static void rxdk_gfx_delete_vertex_shader(unsigned int handle)
     D3DDevice_DeleteVertexShader(handle);
 }
 
+/* reg is the register the shader names, so c0 in vs.1.1 is reg 0 here. The +96 and the count in
+ * DWORDs rather than registers are both what the SDK's own D3DDevice_SetVertexShaderConstant
+ * wrapper does around these entry points; the hardware file is addressed from -96. */
 static void rxdk_gfx_set_vs_constant(int reg, const void *data, int count)
 {
     D3DDevice_SetVertexShaderConstantNotInline(reg + 96, data, (unsigned int)(count * 4));
 }
 
+/* The getter is not the setter's mirror: it applies the +96 itself and counts in registers, so the
+ * register the shader names goes in untouched. */
 static void rxdk_gfx_get_vs_constant(int reg, void *data, int count)
 {
     D3DDevice_GetVertexShaderConstant(reg, data, (unsigned int)count);
@@ -766,11 +938,23 @@ static void *d3d_symbol(void *handle, const char *name, char **err, void *ud)
     if (!strcmp(name, "rxdk_gfx_view")) return (void *)&rxdk_gfx_view;
     if (!strcmp(name, "rxdk_gfx_projection")) return (void *)&rxdk_gfx_projection;
     if (!strcmp(name, "rxdk_gfx_render_state")) return (void *)&rxdk_gfx_render_state;
+    if (!strcmp(name, "rxdk_gfx_get_texture_stage_state")) return (void *)&rxdk_gfx_get_texture_stage_state;
+    if (!strcmp(name, "rxdk_gfx_texture_stage_state")) return (void *)&rxdk_gfx_texture_stage_state;
+    if (!strcmp(name, "rxdk_gfx_create_render_target")) return (void *)&rxdk_gfx_create_render_target;
+    if (!strcmp(name, "rxdk_gfx_create_depth_stencil")) return (void *)&rxdk_gfx_create_depth_stencil;
+    if (!strcmp(name, "rxdk_gfx_get_render_target")) return (void *)&rxdk_gfx_get_render_target;
+    if (!strcmp(name, "rxdk_gfx_get_depth_stencil")) return (void *)&rxdk_gfx_get_depth_stencil;
+    if (!strcmp(name, "rxdk_gfx_set_render_target")) return (void *)&rxdk_gfx_set_render_target;
+    if (!strcmp(name, "rxdk_gfx_texture_surface")) return (void *)&rxdk_gfx_texture_surface;
+    if (!strcmp(name, "rxdk_gfx_block_until_idle")) return (void *)&rxdk_gfx_block_until_idle;
     if (!strcmp(name, "rxdk_gfx_create_vertex_buffer")) return (void *)&rxdk_gfx_create_vertex_buffer;
     if (!strcmp(name, "rxdk_gfx_vertex_write")) return (void *)&rxdk_gfx_vertex_write;
     if (!strcmp(name, "rxdk_gfx_create_index_buffer")) return (void *)&rxdk_gfx_create_index_buffer;
     if (!strcmp(name, "rxdk_gfx_index_write")) return (void *)&rxdk_gfx_index_write;
     if (!strcmp(name, "rxdk_gfx_create_texture")) return (void *)&rxdk_gfx_create_texture;
+    if (!strcmp(name, "rxdk_gfx_create_texture_ex")) return (void *)&rxdk_gfx_create_texture_ex;
+    if (!strcmp(name, "rxdk_gfx_texture_write_level")) return (void *)&rxdk_gfx_texture_write_level;
+    if (!strcmp(name, "rxdk_gfx_texture_read_level")) return (void *)&rxdk_gfx_texture_read_level;
     if (!strcmp(name, "rxdk_gfx_texture_from_memory_ex")) return (void *)&rxdk_gfx_texture_from_memory_ex;
     if (!strcmp(name, "rxdk_gfx_texture_from_file_ex")) return (void *)&rxdk_gfx_texture_from_file_ex;
     if (!strcmp(name, "rxdk_gfx_cube_from_memory")) return (void *)&rxdk_gfx_cube_from_memory;

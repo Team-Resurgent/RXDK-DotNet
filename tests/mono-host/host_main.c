@@ -114,9 +114,18 @@ static void rxdk_run_managed(void)
     if (exc) {
         MonoClass *ec = mono_object_get_class(exc);
         const char *en = ec ? mono_class_get_name(ec) : 0;
+        MonoObject *sx = 0;
+        MonoString *ss;
         OutputDebugStringA("RXDK-DotNet: Main threw: ");
         OutputDebugStringA(en ? en : "(unknown)");
         OutputDebugStringA("\n");
+        /* ToString carries the message and the stack trace. Without it a title failing on hardware
+         * only reports an exception type name, which is rarely enough to say where it came from. */
+        ss = mono_object_to_string(exc, &sx);
+        if (ss && !sx) {
+            char *u = mono_string_to_utf8(ss);
+            if (u) { OutputDebugStringA(u); OutputDebugStringA("\n"); mono_free(u); }
+        }
         return;
     }
     rxdk_print_int("RXDK-DotNet: Main returned ", code);

@@ -1,0 +1,85 @@
+<Project>
+
+  <!--
+    Content for an Xbox title.
+
+    MGCB, MonoGame's content builder, runs on the build machine and turns source art into .xnb.
+    Nothing about it is console specific: the importers and processors are the same ones a desktop
+    title uses, and the reader on the console is MonoGame's own. So content is built for the Windows
+    profile and the .xnb files are staged onto the disc as they are.
+
+    The only rule the console adds is that a texture has to come out as SurfaceFormat.Color, because
+    that is the one layout the Direct3D 8 backend writes. Leave /compress off and TextureFormat=Color
+    in the .mgcb and there is nothing else to do.
+
+    Imported by Rxdk.Title.targets. A title with a Content/*.mgcb gets this for free; set
+    RxdkMgcb explicitly to build something else.
+  -->
+
+  <PropertyGroup>
+    <!-- The identifier the .xnb header carries. ContentManager accepts any platform it knows, and
+         the readers a Reach title uses do not branch on it, so this only has to be one MGCB can
+         build. -->
+    <RxdkContentPlatform Condition="'$(RxdkContentPlatform)' == ''">Windows</RxdkContentPlatform>
+    <RxdkMgcbVersion Condition="'$(RxdkMgcbVersion)' == ''">3.8.5.1</RxdkMgcbVersion>
+
+    <!-- Where content lands on the disc. ContentManager.RootDirectory is resolved against
+         TitleContainer.Location, which is D:\ on the console, so this has to match it. -->
+    <RxdkContentRoot Condition="'$(RxdkContentRoot)' == ''">Content/</RxdkContentRoot>
+  </PropertyGroup>
+
+  <!-- Separate from the build so a title with no content never reaches for the tool. -->
+  <Target Name="RxdkCollectContent">
+    <ItemGroup>
+      <RxdkMgcb Condition="'@(RxdkMgcb)' == ''" Include="Content/*.mgcb" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="RxdkResolveMgcb" DependsOnTargets="RxdkCollectContent"
+          Condition="'$(MgcbPath)' == '' and '@(RxdkMgcb)' != ''">
+    <PropertyGroup>
+      <_RxdkHome Condition="'$(OS)' == 'Windows_NT'">$(UserProfile)</_RxdkHome>
+      <_RxdkHome Condition="'$(OS)' != 'Windows_NT'">$(HOME)</_RxdkHome>
+      <RxdkToolsDir Condition="'$(RxdkToolsDir)' == ''">$(_RxdkHome)/.rxdk/tools</RxdkToolsDir>
+      <_RxdkMgcbDir>$(RxdkToolsDir)/mgcb/$(RxdkMgcbVersion)</_RxdkMgcbDir>
+      <MgcbPath Condition="'$(OS)' == 'Windows_NT'">$(_RxdkMgcbDir)/mgcb.exe</MgcbPath>
+      <MgcbPath Condition="'$(OS)' != 'Windows_NT'">$(_RxdkMgcbDir)/mgcb</MgcbPath>
+    </PropertyGroup>
+
+    <!-- dotnet-mgcb is a normal .NET tool, so it comes from NuGet rather than needing a download
+         task of its own. Pinning the version keeps a title's content reproducible. -->
+    <Exec Condition="!Exists('$(MgcbPath)')"
+          Command="dotnet tool install dotnet-mgcb --version $(RxdkMgcbVersion) --tool-path &quot;$(_RxdkMgcbDir)&quot;"
+          StandardOutputImportance="low" />
+    <Error Condition="!Exists('$(MgcbPath)')"
+           Text="Could not install dotnet-mgcb $(RxdkMgcbVersion). Set MgcbPath to an mgcb binary." />
+  </Target>
+
+  <Target Name="RxdkBuildContent" DependsOnTargets="RxdkCollectContent;RxdkResolveMgcb"
+          Condition="'@(RxdkMgcb)' != ''">
+    <PropertyGroup>
+      <!-- Absolute, because MGCB runs from the .mgcb's own directory so that the relative asset
+           paths in it resolve, and a relative outputDir would land under there too. -->
+      <_RxdkObjDir>$(MSBuildProjectDirectory)/$(IntermediateOutputPath)</_RxdkObjDir>
+      <RxdkContentDir Condition="'$(RxdkContentDir)' == ''">$(_RxdkObjDir)content/</RxdkContentDir>
+    </PropertyGroup>
+
+    <!-- The options come after /@: so they win over the ones the .mgcb sets for whichever desktop
+         platform it was last edited for. /rebuild is off: MGCB tracks its own inputs. -->
+    <MakeDir Directories="$(RxdkContentDir)" />
+    <Exec Command="&quot;$(MgcbPath)&quot; /quiet /@:&quot;%(RxdkMgcb.FullPath)&quot; /platform:$(RxdkContentPlatform) /compress:False /outputDir:&quot;$(RxdkContentDir.TrimEnd('/'))&quot; /intermediateDir:&quot;$(_RxdkObjDir)contentobj&quot;"
+          WorkingDirectory="%(RxdkMgcb.RootDir)%(RxdkMgcb.Directory)" />
+
+    <!-- Everything MGCB produced, keeping its directory structure, because an asset name in
+         Content.Load is a relative path. Not just .xnb: a /copy: entry in the .mgcb passes a file
+         through untouched, which is how the platformer ships its level layouts. -->
+    <ItemGroup>
+      <!-- Two steps: %(RecursiveDir) is only readable off an item that already exists, so the glob
+           has to land somewhere before the disc path can be built from it. -->
+      <_RxdkXnb Include="$(RxdkContentDir)**/*" />
+      <RxdkContent Include="@(_RxdkXnb)"
+                   Link="$(RxdkContentRoot)%(RecursiveDir)%(Filename)%(Extension)" />
+    </ItemGroup>
+  </Target>
+
+</Project>

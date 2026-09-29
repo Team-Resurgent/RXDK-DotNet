@@ -427,6 +427,36 @@ namespace Rxdk
         [DllImport("dsound", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_dsound_IDirectSoundStream_GetVoiceProperties")]
         public static extern int IDirectSoundStream_GetVoiceProperties(IntPtr pStream, IntPtr pVoiceProps);
 
+        [DllImport("dsound", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_dsound_XMediaObject_AddRef")]
+        public static extern int XMediaObject_AddRef(IntPtr a0);
+
+        [DllImport("dsound", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_dsound_XMediaObject_Release")]
+        public static extern int XMediaObject_Release(IntPtr a0);
+
+        [DllImport("dsound", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_dsound_XMediaObject_GetInfo")]
+        public static extern int XMediaObject_GetInfo(IntPtr a0, IntPtr a1);
+
+        [DllImport("dsound", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_dsound_XMediaObject_GetStatus")]
+        public static extern int XMediaObject_GetStatus(IntPtr a0, IntPtr a1);
+
+        [DllImport("dsound", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_dsound_XMediaObject_Process")]
+        public static extern int XMediaObject_Process(IntPtr a0, IntPtr a1, IntPtr a2);
+
+        [DllImport("dsound", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_dsound_XMediaObject_Discontinuity")]
+        public static extern int XMediaObject_Discontinuity(IntPtr a0);
+
+        [DllImport("dsound", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_dsound_XMediaObject_Flush")]
+        public static extern int XMediaObject_Flush(IntPtr a0);
+
+        [DllImport("dsound", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_dsound_XFileMediaObject_Seek")]
+        public static extern int XFileMediaObject_Seek(IntPtr a0, int a1, int a2, IntPtr a3);
+
+        [DllImport("dsound", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_dsound_XFileMediaObject_GetLength")]
+        public static extern int XFileMediaObject_GetLength(IntPtr a0, IntPtr a1);
+
+        [DllImport("dsound", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_dsound_XFileMediaObject_DoWork")]
+        public static extern void XFileMediaObject_DoWork(IntPtr a0);
+
         static byte[] ToAnsi(string text)
         {
             return Encoding.ASCII.GetBytes(text + "\0");

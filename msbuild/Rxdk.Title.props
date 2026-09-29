@@ -1,0 +1,20 @@
+<Project>
+
+  <!--
+    Compile shape for an Xbox title. Import this near the top of a .csproj that uses
+    Microsoft.NET.Sdk, then set RxdkRuntimeDir to the unzipped rxdk-dotnet-runtime.zip.
+    Everything not specific to a title lives in Rxdk.Common.props.
+  -->
+
+  <Import Project="$(MSBuildThisFileDirectory)Rxdk.Common.props" />
+
+  <PropertyGroup>
+    <!-- A title needs an entry point; the host rejects a Main.dll without one. Microsoft.NET.Sdk
+         already defaulted this to Library, so override rather than condition on empty. -->
+    <OutputType>Exe</OutputType>
+    <!-- The host opens D:\assemblies\Main.dll by name, so the output name is not a choice.
+         Microsoft.NET.Sdk.props already defaulted this to the project name; override it. -->
+    <AssemblyName>Main</AssemblyName>
+  </PropertyGroup>
+
+</Project>

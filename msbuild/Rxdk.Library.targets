@@ -1,0 +1,11 @@
+<Project>
+
+  <!--
+    References for a library an Xbox title references. Import this at the end of a .csproj.
+    A library is not staged or packed, so there is nothing here beyond the shared references;
+    the title that references it carries it onto the disc as an ordinary build output.
+  -->
+
+  <Import Project="$(MSBuildThisFileDirectory)Rxdk.Common.targets" />
+
+</Project>

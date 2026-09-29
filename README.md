@@ -22,7 +22,7 @@ A push to `main` publishes a moving
 |---|---|
 | `RxdkMonoHost.iso` | Bootable disc. This is the file xemu runs. |
 | `RxdkMonoHost.xbe` | The title inside that ISO. |
-| `rxdk-dotnet-runtime.zip` | `assemblies/` holds `mscorlib.dll`, `System.dll`, `System.Core.dll`, `Rxdk.Input.dll`, `Rxdk.Kernel.dll`, and `Main.dll`. `lib/` holds the native runtime archives. |
+| `rxdk-dotnet-runtime.zip` | `assemblies/` holds `mscorlib.dll`, `System.dll`, `System.Core.dll`, `System.Numerics.Vectors.dll`, `System.Runtime.Serialization.dll`, `MonoGame.Framework.dll`, the `Rxdk.*` libraries, and `Main.dll`. `msbuild/` holds the two files a title project imports. `lib/` holds the native runtime archives. |
 
 The Xbox image is built once. The PC-side tools you use to pack a disc or copy files onto a kit
 are the [RXDK Tools](https://github.com/Team-Resurgent/RXDK-Tools/releases/latest) packages, one
@@ -51,13 +51,12 @@ separate download from
 name does not matter. `Main` gets an empty `args` array. Its return value is printed on the
 debug output as `Main returned N`. A thrown exception stops there and prints `Main threw`.
 
-Compile with `-target:exe` and name the output `Main.dll`. `Console.WriteLine` shows up on the
-debug output.
+`Console.WriteLine` shows up on the debug output.
 
-Unzip `rxdk-dotnet-runtime.zip` and compile against the assemblies in `assemblies/`. Reference
-this `mscorlib.dll` with `-nostdlib`. There is one `mscorlib.dll`, next to your program.
+A title is an ordinary C# project. `samples/HelloXbox` is the whole of it: a `Program.cs` and a
+`.csproj` that imports two files from `msbuild/`.
 
-`App.cs`:
+`Program.cs`:
 
 ```csharp
 using System;
@@ -72,23 +71,49 @@ class Program
 }
 ```
 
-Point `csc.dll` at the SDK directory from `dotnet --list-sdks` (the path under your dotnet
-install, for example `C:\Program Files\dotnet\sdk\10.0.400` on Windows). From the folder that
-contains `assemblies/`:
+`HelloXbox.csproj`:
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../msbuild/Rxdk.Title.props" />
+  <Import Project="../../msbuild/Rxdk.Title.targets" />
+</Project>
+```
+
+`Rxdk.Title.props` sets the compile shape (`NoStdLib`, no implicit framework references, output
+named `Main.dll`) and `Rxdk.Title.targets` references every assembly in the runtime and adds two
+targets:
+
+```bash
+dotnet build                 # Main.dll, compiled against the runtime's mscorlib
+dotnet build -t:RxdkStage    # bin/Debug/disc/ -- default.xbe plus assemblies/
+dotnet build -t:RxdkPack     # bin/Debug/<project>.iso, bootable
+```
+
+`RxdkPack` downloads the `xdvdfs` build for the machine it runs on into `~/.rxdk/tools` and caches
+it, so the same three commands work on Windows, macOS, and Linux on x64 and arm64 with nothing
+installed but the .NET SDK.
+
+Outside a checkout of this repo, unzip `rxdk-dotnet-runtime.zip`, copy the two `msbuild/` files
+next to the project, and set `RxdkRuntimeDir` to the folder holding `assemblies/` along with
+`RxdkXbe` to `RxdkMonoHost.xbe`. Every assembly is referenced whether or not the title uses it;
+an unused reference does not reach the output, but `RxdkStage` does copy them all to the disc.
+Add files to the disc root with `<RxdkContent Include="..." />`.
+
+Sockets, DNS, and `System.Net.Sockets.Socket` live in `System.dll` (those calls are libxnet, not
+the kernel). `System.Linq` is in `System.Core.dll`. `Rxdk.Input.dll` has `Rxdk.GamePad` and
+`Rxdk.Keyboard`; `Rxdk.Kernel.dll` has kernel methods such as `Kernel.IoCreateSymbolicLink` and
+`Kernel.AvSetDisplayMode`. The prebuilt `default.xbe` already contains that native code, because
+`libxapi` and `libkernel` are in every title.
+
+To compile without MSBuild, reference the runtime's `mscorlib.dll` with `-nostdlib`. Point `$CSC`
+at `csc.dll` under the SDK directory from `dotnet --list-sdks`:
 
 ```bash
 dotnet exec "$CSC" -nostdlib -noconfig -target:exe -optimize+ -unsafe \
   -reference:assemblies/mscorlib.dll -reference:assemblies/System.dll \
-  -out:assemblies/Main.dll App.cs
+  -out:assemblies/Main.dll Program.cs
 ```
-
-Add `-reference:assemblies/System.Core.dll` if the app uses `System.Linq`. Sockets, DNS, and
-`System.Net.Sockets.Socket` live in `System.dll` (those calls are libxnet, not the kernel).
-Add `-reference:assemblies/Rxdk.Input.dll` for `Rxdk.GamePad` and `Rxdk.Keyboard`, and
-`-reference:assemblies/Rxdk.Kernel.dll` for kernel methods such as `Kernel.IoCreateSymbolicLink`
-and `Kernel.AvSetDisplayMode`. The prebuilt `default.xbe` already contains that native code,
-because `libxapi` and `libkernel` are in every title. Copy `Rxdk.Input.dll` and `Rxdk.Kernel.dll`
-onto the disc with `Main.dll`.
 
 ## Copy it to the Xbox
 
@@ -96,12 +121,10 @@ onto the disc with `Main.dll`.
 from the hard disk. It is read-only from disc. `T:\` is the title's persistent partition and is
 writable (`File.WriteAllText(@"T:\notes.txt", "...")`).
 
-### xemu
-
-Replace `assemblies/Main.dll` inside the disc tree and pack a new ISO with `xdvdfs`:
+Either target produces the same tree, `RxdkPack` just wraps it in an ISO:
 
 ```text
-RxdkMonoHost/
+disc/
   default.xbe
   assemblies/
     mscorlib.dll
@@ -112,14 +135,12 @@ RxdkMonoHost/
     Main.dll
 ```
 
-```bash
-xdvdfs pack RxdkMonoHost RxdkMonoHost.iso
-```
+### xemu
 
 Boot from the xemu directory so its `xemu.toml` paths resolve. `-serial stdio` is the debug output:
 
 ```bash
-xemu -dvd_path /path/to/RxdkMonoHost.iso -device lpc47m157 -serial stdio
+xemu -dvd_path bin/Debug/HelloXbox.iso -device lpc47m157 -serial stdio
 ```
 
 The title reboots when it finishes, so the log repeats until you stop xemu.
@@ -127,14 +148,13 @@ The title reboots when it finishes, so the log repeats until you stop xemu.
 ### A devkit
 
 `xbcp`, `xbset`, and `xbox-launch` are in the same tools zip. Xbox paths use the `xE:\` form.
-Set the kit once, then copy the same tree the ISO contains and launch it. On a hard-disk launch,
-`D:\` is that directory.
+Set the kit once, then copy the staged tree and launch it. On a hard-disk launch, `D:\` is that
+directory.
 
 ```bash
 xbset 192.168.1.10
-xbcp /y RxdkMonoHost.xbe xE:\devkit\RxdkMonoHost\default.xbe
-xbcp /y /t assemblies xE:\devkit\RxdkMonoHost\assemblies
-xbox-launch /dir xE:\devkit\RxdkMonoHost /title default.xbe
+xbcp /y /t bin/Debug/disc xE:\devkit\HelloXbox
+xbox-launch /dir xE:\devkit\HelloXbox /title default.xbe
 ```
 
 `/x <ip-or-name>` on any of those commands overrides the default kit. Debug text goes to
@@ -203,14 +223,51 @@ display. `Kernel.HalReturnToFirmware` does not return (`Kernel.HalQuickRebootRou
 serial log prints that address as it comes up (`RXDK-DotNet: net 192.168.1.96 dhcp 0x68`).
 Binding `127.0.0.1` throws `SocketException` 10049.
 
+## MonoGame
+
+`MonoGame.Framework.dll` is in the runtime zip. It is MonoGame 3.8.5 from the Team-Resurgent fork
+(`vendor/monogame`, `xbox` branch) with the other platforms removed and an Xbox backend over
+`Rxdk.Graphics` and `Rxdk.Input`. A game's own code does not change.
+
+`vendor/monogame-samples/Platformer2D/Platformer2D.Xbox` is the example: the upstream
+Platformer2D sources, unmodified, plus a `.csproj` that imports the same two title files and
+names the content project:
+
+```xml
+<ItemGroup>
+  <Compile Include="../Platformer2D.Core/**/*.cs" />
+  <RxdkMgcb Include="../Platformer2D.Core/Content/Platformer2D.mgcb" />
+</ItemGroup>
+```
+
+`dotnet build -t:RxdkPack` builds the content with MGCB on the PC, installing `dotnet-mgcb` into
+`~/.rxdk/tools` the first time, and stages the output under `D:\Content`. A project with a
+`Content/*.mgcb` beside it does not need the `RxdkMgcb` line. On xemu the platformer draws its
+level (the background layers, tiles, gems, player, and exit), the HUD font, and the timer counts
+down to the lose screen. Its sound effects and music play.
+
+What the backend expects of content and code:
+
+- Textures are `Color` or DXT. A `Color` texture of any size works; one whose sides are not
+  powers of two is padded on the console, so it costs the memory of the padded size and cannot be
+  mipmapped. A DXT texture must be a power of two on both sides.
+- Effects are `SpriteEffect` and `BasicEffect`. The NV2A has no HLSL compiler on the console and
+  MGFX cannot target it, so a custom `.fx` does not load.
+- Index buffers are 16-bit. Vertex and index buffers are write-only.
+- `Texture2D.FromStream` needs an image decoder the console does not have. Load images through
+  the content pipeline.
+- `SoundEffect` plays through DirectSound (`Rxdk.Audio`), with volume, pitch, pan, and looping.
+  It takes PCM and float WAVs; ADPCM sounds load but stay silent.
+- `Song` streams the `.wma` beside its `.xnb` through the SDK's WMA decoder, on the game thread
+  once a frame. `DynamicSoundEffectInstance` is still silent.
+
 ## What's next
 
 The runtime runs your program. A game still needs the Xbox libraries and a small framework on top of them.
 
 - **Library bindings.** Done: `Rxdk.Input`, `Rxdk.Kernel`, `Rxdk.Graphics`, `Rxdk.Audio`, `Rxdk.Music`, `Rxdk.Xact`, `Rxdk.Video`, `Rxdk.Uix`, `Rxdk.Online`, and `Rxdk.Voice`. Each library is its own assembly, and the host links that native library only when the assembly is on the disc. What remains is exercising the newer ones on a console and giving the raw calls friendlier managed types.
-- **A cleaned MonoGame for original Xbox.** A Team-Resurgent fork on an `xbox` branch, with the other platforms and their desktop graphics stacks removed. It calls these bindings. Content is still built on the PC. The title reads the built files from `D:\`.
-- **A normal project.** `dotnet build` of a C# project that references `mscorlib.dll`, produces `Main.dll`, and packs or copies the title. The hand-written `csc` line above is the stand-in until that exists.
-- **Visual Studio and VS Code.** New extensions for this runtime: a project template, build, deploy to a kit or xemu, and debug.
+- **More of MonoGame.** Platformer2D runs (see [MonoGame](#monogame)). Left: custom effects, 3D samples beyond `BasicEffect`, and input checked on a console.
+- **Visual Studio and VS Code.** New extensions for this runtime: a project template, build, deploy to a kit or xemu, and debug. `dotnet build` already builds and packs a title, so what is left is the editor surface: a template to create the project from, one-click deploy, and a debugger.
 - **Saves.** A small API over `T:\`, the title's writable partition, so a game can store progress without inventing its own file layout.
 
 ## Build the runtime yourself
@@ -230,10 +287,12 @@ bash scripts/build-metadata.sh
 bash scripts/build-mini.sh
 bash scripts/build-corlib.sh
 bash scripts/build-syscore.sh
+bash scripts/build-bcl.sh
 bash scripts/build-input.sh
 bash scripts/build-kernel.sh
 bash scripts/build-graphics.sh
 bash scripts/build-sdklibs.sh
+bash scripts/build-monogame.sh
 bash scripts/build-testasm.sh
 bash scripts/build-minitests.sh
 bash scripts/build-host.sh

@@ -14,13 +14,11 @@ CORLIB="$OUT/mscorlib.dll"
 [ -f "$OUT/Rxdk.Kernel.dll" ] || { echo "ERROR: $OUT/Rxdk.Kernel.dll not found — run scripts/build-kernel.sh first"; exit 1; }
 [ -f "$OUT/Rxdk.Graphics.dll" ] || { echo "ERROR: $OUT/Rxdk.Graphics.dll not found — run scripts/build-graphics.sh first"; exit 1; }
 
-# Minimal System.dll: SocketAddress (the native socket code loads "System.dll" by name) and a
-# UDP loopback helper whose methods are the real Socket icalls.
+# System.dll holds SocketAddress (the native socket code loads "System.dll" by name), the UDP
+# loopback helper whose methods are the real Socket icalls, and — since build-bcl.sh took it over —
+# Stopwatch, Uri, and Regex. Building it here too would overwrite the full one with the stub.
 SYS="$OUT/System.dll"
-MSYS2_ARG_CONV_EXCL='*' dotnet exec "$(cygpath -w "$CSC")" -nostdlib -noconfig -target:library -unsafe -optimize+ \
-  -out:"$(cygpath -w "$SYS")" -reference:"$(cygpath -w "$CORLIB")" \
-  "$(cygpath -w "$ROOT/tests/managed/SystemNet.cs")" > "$OUT/system.log" 2>&1 \
-  || { echo "System.dll FAILED"; grep -iE 'error' "$OUT/system.log" | head; exit 1; }
+[ -f "$SYS" ] || { echo "ERROR: $SYS not found — run scripts/build-bcl.sh first"; exit 1; }
 echo "System.dll: $(stat -c%s "$SYS" 2>/dev/null) bytes"
 
 RSP="$OUT/testasm.rsp"

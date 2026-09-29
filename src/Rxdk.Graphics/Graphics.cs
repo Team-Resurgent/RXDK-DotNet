@@ -139,6 +139,21 @@ namespace Rxdk
         SrcBlend = 62,
         DestBlend = 63,
         ZWriteEnable = 64,
+        DitherEnable = 65,
+        ShadeMode = 66,
+        ColorWriteEnable = 67,
+        StencilZFail = 68,
+        StencilPass = 69,
+        StencilFunc = 70,
+        StencilRef = 71,
+        StencilMask = 72,
+        StencilWriteMask = 73,
+        BlendOp = 74,
+        BlendColor = 75,
+        /// <summary>Depth bias, as a slope-scaled factor and a constant offset.</summary>
+        PolygonOffsetZSlopeScale = 77,
+        PolygonOffsetZOffset = 78,
+        SolidOffsetEnable = 81,
         FogEnable = 92,
         Lighting = 102,
         ColorVertex = 105,
@@ -146,7 +161,80 @@ namespace Rxdk
         FillMode = 139,
         ZEnable = 143,
         StencilEnable = 144,
-        CullMode = 147
+        StencilFail = 145,
+        CullMode = 147,
+        TextureFactor = 148,
+        MultiSampleAntiAlias = 152
+    }
+
+    /// <summary>
+    /// Which channels a draw is allowed to write, for RenderState.ColorWriteEnable. The console
+    /// spends a whole byte per channel rather than one bit, unlike desktop Direct3D 8.
+    /// </summary>
+    [Flags]
+    public enum ColorWriteEnable
+    {
+        Blue = 1 << 0,
+        Green = 1 << 8,
+        Red = 1 << 16,
+        Alpha = 1 << 24,
+        All = Blue | Green | Red | Alpha
+    }
+
+    /// <summary>
+    /// Per-stage texture state. Direct3D 8 has no separate sampler object: filtering and
+    /// addressing are stage states alongside the fixed-function blend controls.
+    /// </summary>
+    public enum TextureStageState
+    {
+        AddressU = 0,
+        AddressV = 1,
+        AddressW = 2,
+        MagFilter = 3,
+        MinFilter = 4,
+        MipFilter = 5,
+        MipMapLodBias = 6,
+        MaxMipLevel = 7,
+        MaxAnisotropy = 8,
+        ColorOp = 12,
+        ColorArg0 = 13,
+        ColorArg1 = 14,
+        ColorArg2 = 15,
+        AlphaOp = 16,
+        AlphaArg0 = 17,
+        AlphaArg1 = 18,
+        AlphaArg2 = 19,
+        ResultArg = 20,
+        TextureTransformFlags = 21,
+        TexCoordIndex = 28,
+        BorderColor = 29
+    }
+
+    public enum TextureFilter
+    {
+        /// <summary>Valid for <see cref="TextureStageState.MipFilter"/> only.</summary>
+        None = 0,
+        Point = 1,
+        Linear = 2,
+        Anisotropic = 3
+    }
+
+    public enum TextureAddress
+    {
+        Wrap = 1,
+        Mirror = 2,
+        Clamp = 3,
+        Border = 4,
+        ClampToEdge = 5
+    }
+
+    public enum TextureOp
+    {
+        Disable = 1,
+        SelectArg1 = 2,
+        SelectArg2 = 3,
+        Modulate = 4,
+        Add = 7
     }
 
     public enum Cull
@@ -168,8 +256,22 @@ namespace Rxdk
         Unknown = 0,
         A8R8G8B8 = 6,
         X8R8G8B8 = 7,
+        /// <summary>
+        /// The DXT block formats. The GPU samples these directly, so compressed content stays
+        /// compressed in video memory. DXT2 and DXT4 share their values with DXT3 and DXT5; the
+        /// difference is only whether the colour is premultiplied, which the sampler does not care
+        /// about.
+        /// </summary>
+        Dxt1 = 0x0C,
+        Dxt3 = 0x0E,
+        Dxt5 = 0x0F,
         LinearA8R8G8B8 = 0x12,
-        LinearX8R8G8B8 = 0x1E
+        LinearX8R8G8B8 = 0x1E,
+        /// <summary>Depth formats, for a depth stencil surface rather than a texture.</summary>
+        Depth24Stencil8 = 0x2A,
+        Depth16 = 0x2C,
+        LinearDepth24Stencil8 = 0x2E,
+        LinearDepth16 = 0x30
     }
 
     public static class GraphicsDevice
@@ -407,11 +509,10 @@ namespace Rxdk
                 GfxNative.GetPixelShaderConstant((uint)register, (IntPtr)data, values.Length / 4);
         }
 
+        /// <summary>Passing null unbinds the stream.</summary>
         public static void SetVertexBuffer(VertexBuffer buffer, int stride)
         {
-            if (buffer == null)
-                throw new ArgumentNullException("buffer");
-            GfxNative.SetStream(buffer.Handle, stride);
+            GfxNative.SetStream(buffer == null ? IntPtr.Zero : buffer.Handle, stride);
         }
 
         public static void SetIndexBuffer(IndexBuffer buffer)
@@ -439,15 +540,125 @@ namespace Rxdk
             GfxNative.Draw((int)type, startVertex, primitiveCount);
         }
 
-        public static void DrawIndexedPrimitive(PrimitiveType type, int startIndex, int primitiveCount)
+        public static void DrawIndexedPrimitive(PrimitiveType type, int baseVertex, int startIndex, int primitiveCount)
         {
-            GfxNative.DrawIndexed((int)type, startIndex, primitiveCount);
+            GfxNative.DrawIndexed((int)type, baseVertex, startIndex, primitiveCount);
+        }
+
+        public static void SetTextureStageState(int stage, TextureStageState state, int value)
+        {
+            GfxNative.TextureStageState(stage, (int)state, (uint)value);
+        }
+
+        public static int GetTextureStageState(int stage, TextureStageState state)
+        {
+            return (int)GfxNative.GetTextureStageState(stage, (int)state);
+        }
+
+        /// <summary>
+        /// Direct3D 8 on Xbox has no scene brackets; BeginScene and EndScene are empty inline
+        /// functions in the SDK. These exist so callers written against the desktop API work.
+        /// </summary>
+        public static void BeginScene() { }
+
+        public static void EndScene() { }
+
+        /// <summary>
+        /// Waits for the GPU to drain the push buffer. Needed before reading a surface the GPU
+        /// was drawing into, since the GPU runs a whole push buffer behind the CPU.
+        /// </summary>
+        public static void BlockUntilIdle()
+        {
+            GfxNative.BlockUntilIdle();
+        }
+
+        /// <summary>
+        /// Binds a colour and depth surface. Passing null for either restores nothing: the
+        /// caller keeps the previous surfaces from <see cref="GetRenderTarget"/> and rebinds them.
+        /// </summary>
+        public static void SetRenderTarget(Surface color, Surface depthStencil)
+        {
+            GfxNative.SetRenderTarget(
+                color == null ? IntPtr.Zero : color.Handle,
+                depthStencil == null ? IntPtr.Zero : depthStencil.Handle);
+        }
+
+        public static Surface GetRenderTarget()
+        {
+            return Surface.Adopt(GfxNative.GetRenderTarget());
+        }
+
+        public static Surface GetDepthStencil()
+        {
+            return Surface.Adopt(GfxNative.GetDepthStencil());
         }
 
         public static void Present()
         {
             GfxNative.Present();
         }
+    }
+
+    /// <summary>
+    /// A render target, depth buffer, or one mip level of a texture. The back buffer and a
+    /// texture's own levels are owned elsewhere, so <see cref="Dispose"/> only releases
+    /// surfaces this class created.
+    /// </summary>
+    public sealed class Surface : IDisposable
+    {
+        readonly IntPtr handle;
+        readonly bool owned;
+        bool disposed;
+
+        Surface(IntPtr handle, bool owned)
+        {
+            this.handle = handle;
+            this.owned = owned;
+        }
+
+        internal IntPtr Handle { get { return handle; } }
+
+        internal static Surface Adopt(IntPtr handle)
+        {
+            return handle == IntPtr.Zero ? null : new Surface(handle, false);
+        }
+
+        public static Surface CreateRenderTarget(int width, int height, SurfaceFormat format)
+        {
+            return Create(GfxNative.CreateRenderTarget(width, height, (int)format));
+        }
+
+        public static Surface CreateDepthStencil(int width, int height, SurfaceFormat format)
+        {
+            return Create(GfxNative.CreateDepthStencil(width, height, (int)format));
+        }
+
+        /// <summary>One mip level of a texture, for drawing into it as a render target.</summary>
+        public static Surface FromTexture(Texture texture, int level)
+        {
+            if (texture == null)
+                throw new ArgumentNullException("texture");
+            return Adopt(GfxNative.TextureSurface(texture.Handle, level));
+        }
+
+        static Surface Create(IntPtr handle)
+        {
+            if (handle == IntPtr.Zero)
+                throw new OutOfMemoryException();
+            return new Surface(handle, true);
+        }
+
+        public void Dispose()
+        {
+            if (disposed)
+                return;
+            disposed = true;
+            if (owned)
+                GfxNative.Release(handle);
+            GC.SuppressFinalize(this);
+        }
+
+        ~Surface() { Dispose(); }
     }
 
     internal static class GfxNative
@@ -487,6 +698,33 @@ namespace Rxdk
 
             [DllImport("d3d8", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_gfx_render_state")]
             public static extern void RenderState(int state, uint value);
+
+            [DllImport("d3d8", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_gfx_texture_stage_state")]
+            public static extern void TextureStageState(int stage, int state, uint value);
+
+            [DllImport("d3d8", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_gfx_get_texture_stage_state")]
+            public static extern uint GetTextureStageState(int stage, int state);
+
+            [DllImport("d3d8", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_gfx_create_render_target")]
+            public static extern IntPtr CreateRenderTarget(int width, int height, int format);
+
+            [DllImport("d3d8", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_gfx_create_depth_stencil")]
+            public static extern IntPtr CreateDepthStencil(int width, int height, int format);
+
+            [DllImport("d3d8", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_gfx_get_render_target")]
+            public static extern IntPtr GetRenderTarget();
+
+            [DllImport("d3d8", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_gfx_get_depth_stencil")]
+            public static extern IntPtr GetDepthStencil();
+
+            [DllImport("d3d8", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_gfx_set_render_target")]
+            public static extern void SetRenderTarget(IntPtr color, IntPtr depthStencil);
+
+            [DllImport("d3d8", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_gfx_texture_surface")]
+            public static extern IntPtr TextureSurface(IntPtr texture, int level);
+
+            [DllImport("d3d8", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_gfx_block_until_idle")]
+            public static extern void BlockUntilIdle();
 
             [DllImport("d3d8", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_gfx_set_stream")]
             public static extern void SetStream(IntPtr buffer, int stride);
@@ -549,7 +787,7 @@ namespace Rxdk
             public static extern void Draw(int type, int startVertex, int primitiveCount);
 
             [DllImport("d3d8", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_gfx_draw_indexed")]
-            public static extern void DrawIndexed(int type, int startIndex, int primitiveCount);
+            public static extern void DrawIndexed(int type, int baseVertex, int startIndex, int primitiveCount);
 
             [DllImport("d3d8", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_gfx_create_vertex_buffer")]
             public static extern IntPtr CreateVertexBuffer(int size);
@@ -565,6 +803,15 @@ namespace Rxdk
 
             [DllImport("d3d8", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_gfx_create_texture")]
             public static extern IntPtr CreateTexture(int width, int height, int format);
+
+            [DllImport("d3d8", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_gfx_create_texture_ex")]
+            public static extern IntPtr CreateTextureEx(int width, int height, int levels, int format);
+
+            [DllImport("d3d8", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_gfx_texture_write_level")]
+            public static extern void TextureWriteLevel(IntPtr texture, int level, IntPtr src, int width, int height, int bytesPerPixel, int linear);
+
+            [DllImport("d3d8", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_gfx_texture_read_level")]
+            public static extern void TextureReadLevel(IntPtr texture, int level, IntPtr dest, int width, int height, int bytesPerPixel, int linear);
 
             [DllImport("d3d8", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_gfx_texture_from_memory_ex")]
             public static extern IntPtr TextureFromMemoryEx(IntPtr data, int size, int width, int height, int mipLevels, int format, out int outWidth, out int outHeight, out int outFormat);
@@ -615,12 +862,29 @@ namespace Rxdk
 
         public unsafe void SetData(byte[] data)
         {
+            if (data == null)
+                throw new ArgumentNullException("data");
+            SetData(data, 0, 0, data.Length);
+        }
+
+        /// <summary>Writes part of the buffer, which is what a dynamic buffer wants.</summary>
+        public unsafe void SetData(byte[] data, int offsetInBytes, int startIndex, int count)
+        {
             if (disposed)
                 throw new ObjectDisposedException("VertexBuffer");
             if (data == null)
                 throw new ArgumentNullException("data");
+            if (offsetInBytes < 0 || startIndex < 0 || count < 0 || startIndex + count > data.Length)
+                throw new ArgumentOutOfRangeException("count");
             fixed (byte* p = data)
-                GfxNative.VertexWrite(handle, (IntPtr)p, 0, data.Length);
+                GfxNative.VertexWrite(handle, (IntPtr)(p + startIndex), offsetInBytes, count);
+        }
+
+        public void SetData(IntPtr data, int offsetInBytes, int count)
+        {
+            if (disposed)
+                throw new ObjectDisposedException("VertexBuffer");
+            GfxNative.VertexWrite(handle, data, offsetInBytes, count);
         }
 
         public void Dispose()
@@ -656,12 +920,28 @@ namespace Rxdk
 
         public unsafe void SetData(byte[] data)
         {
+            if (data == null)
+                throw new ArgumentNullException("data");
+            SetData(data, 0, 0, data.Length);
+        }
+
+        public unsafe void SetData(byte[] data, int offsetInBytes, int startIndex, int count)
+        {
             if (disposed)
                 throw new ObjectDisposedException("IndexBuffer");
             if (data == null)
                 throw new ArgumentNullException("data");
+            if (offsetInBytes < 0 || startIndex < 0 || count < 0 || startIndex + count > data.Length)
+                throw new ArgumentOutOfRangeException("count");
             fixed (byte* p = data)
-                GfxNative.IndexWrite(handle, (IntPtr)p, 0, data.Length);
+                GfxNative.IndexWrite(handle, (IntPtr)(p + startIndex), offsetInBytes, count);
+        }
+
+        public void SetData(IntPtr data, int offsetInBytes, int count)
+        {
+            if (disposed)
+                throw new ObjectDisposedException("IndexBuffer");
+            GfxNative.IndexWrite(handle, data, offsetInBytes, count);
         }
 
         public void Dispose()
@@ -679,16 +959,39 @@ namespace Rxdk
     public sealed class Texture : IDisposable
     {
         readonly IntPtr handle;
-        readonly int width, height, bytesPerPixel, linear;
+        readonly int width, height, bytesPerPixel, linear, blockBytes;
         bool disposed;
 
-        Texture(IntPtr handle, int width, int height, int bytesPerPixel, int linear)
+        Texture(IntPtr handle, int width, int height, int bytesPerPixel, int linear, int blockBytes)
         {
             this.handle = handle;
             this.width = width;
             this.height = height;
             this.bytesPerPixel = bytesPerPixel;
             this.linear = linear;
+            this.blockBytes = blockBytes;
+        }
+
+        /// <summary>
+        /// Whether the texels are laid out in rows rather than swizzled. This decides how the
+        /// sampler reads texture coordinates: a linear texture is addressed in texels, a swizzled
+        /// one from 0 to 1. Compressed textures are swizzled for this purpose even though their
+        /// blocks are written row by row.
+        /// </summary>
+        public bool IsLinear { get { return linear != 0 && blockBytes == 0; } }
+
+        /// <summary>
+        /// Bytes per 4x4 block, or zero for a format that is not block compressed.
+        /// </summary>
+        public static int BlockBytes(SurfaceFormat format)
+        {
+            switch (format)
+            {
+                case SurfaceFormat.Dxt1: return 8;
+                case SurfaceFormat.Dxt3:
+                case SurfaceFormat.Dxt5: return 16;
+                default: return 0;
+            }
         }
 
         internal IntPtr Handle { get { return handle; } }
@@ -697,13 +1000,26 @@ namespace Rxdk
 
         public static Texture Create(int width, int height, SurfaceFormat format)
         {
+            return Create(width, height, 1, format);
+        }
+
+        public static Texture Create(int width, int height, int mipLevels, SurfaceFormat format)
+        {
             if (width <= 0 || height <= 0)
                 throw new ArgumentOutOfRangeException("width");
-            IntPtr handle = GfxNative.CreateTexture(width, height, (int)format);
+            IntPtr handle = GfxNative.CreateTextureEx(width, height, mipLevels, (int)format);
             if (handle == IntPtr.Zero)
                 throw new OutOfMemoryException();
             int linear = format == SurfaceFormat.LinearA8R8G8B8 || format == SurfaceFormat.LinearX8R8G8B8 ? 1 : 0;
-            return new Texture(handle, width, height, 4, linear);
+            int block = BlockBytes(format);
+            if (block != 0)
+            {
+                // A compressed level is a grid of 4x4 blocks and cannot be swizzled, so it is
+                // written row of blocks at a time. Describing it as a linear image one byte wide
+                // lets the same write path carry it.
+                return new Texture(handle, width, height, 1, 1, block);
+            }
+            return new Texture(handle, width, height, 4, linear, 0);
         }
 
         public static Texture FromMemory(byte[] data)
@@ -759,8 +1075,11 @@ namespace Rxdk
             if (handle == IntPtr.Zero)
                 throw new InvalidOperationException("texture");
             int linear = format == (int)SurfaceFormat.LinearA8R8G8B8 || format == (int)SurfaceFormat.LinearX8R8G8B8 ? 1 : 0;
+            int block = BlockBytes((SurfaceFormat)format);
+            if (block != 0)
+                return new Texture(handle, width, height, 1, 1, block);
             int bpp = format == (int)SurfaceFormat.A8R8G8B8 || format == (int)SurfaceFormat.X8R8G8B8 || linear != 0 ? 4 : 0;
-            return new Texture(handle, width, height, bpp, linear);
+            return new Texture(handle, width, height, bpp, linear, 0);
         }
 
         static byte[] ToAnsi(string text)
@@ -773,14 +1092,52 @@ namespace Rxdk
 
         public unsafe void SetData(byte[] pixels)
         {
+            SetData(0, pixels, 0, width, height);
+        }
+
+        /// <summary>
+        /// Writes one mip level. The caller passes that level's dimensions, since only it knows
+        /// how the chain was built.
+        /// </summary>
+        public unsafe void SetData(int level, byte[] pixels, int startIndex, int levelWidth, int levelHeight)
+        {
             if (disposed)
                 throw new ObjectDisposedException("Texture");
             if (pixels == null)
                 throw new ArgumentNullException("pixels");
             if (bytesPerPixel == 0)
                 throw new InvalidOperationException("texture");
+            Shape(ref levelWidth, ref levelHeight);
             fixed (byte* p = pixels)
-                GfxNative.TextureWrite(handle, (IntPtr)p, width, height, bytesPerPixel, linear);
+                GfxNative.TextureWriteLevel(handle, level, (IntPtr)(p + startIndex),
+                    levelWidth, levelHeight, bytesPerPixel, linear);
+        }
+
+        /// <summary>
+        /// Restates a compressed level's size as the byte grid the write and read paths copy: one
+        /// row per row of 4x4 blocks, as wide as that row is long. A level narrower than a block
+        /// still occupies a whole one.
+        /// </summary>
+        void Shape(ref int levelWidth, ref int levelHeight)
+        {
+            if (blockBytes == 0)
+                return;
+            levelWidth = (levelWidth + 3) / 4 * blockBytes;
+            levelHeight = (levelHeight + 3) / 4;
+        }
+
+        public unsafe void GetData(int level, byte[] pixels, int startIndex, int levelWidth, int levelHeight)
+        {
+            if (disposed)
+                throw new ObjectDisposedException("Texture");
+            if (pixels == null)
+                throw new ArgumentNullException("pixels");
+            if (bytesPerPixel == 0)
+                throw new InvalidOperationException("texture");
+            Shape(ref levelWidth, ref levelHeight);
+            fixed (byte* p = pixels)
+                GfxNative.TextureReadLevel(handle, level, (IntPtr)(p + startIndex),
+                    levelWidth, levelHeight, bytesPerPixel, linear);
         }
 
         public void Dispose()

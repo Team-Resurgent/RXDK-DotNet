@@ -1,0 +1,18 @@
+<Project>
+
+  <!--
+    Compile shape for a library an Xbox title references, such as the MonoGame framework.
+    Import this near the top of a .csproj that uses Microsoft.NET.Sdk, then set
+    RxdkRuntimeDir to the unzipped rxdk-dotnet-runtime.zip.
+
+    A library keeps its own AssemblyName, unlike a title, which the host loads as Main.dll.
+  -->
+
+  <Import Project="$(MSBuildThisFileDirectory)Rxdk.Common.props" />
+
+  <PropertyGroup>
+    <!-- Microsoft.NET.Sdk.props already defaulted this, so override rather than condition. -->
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,138 @@
+<Project>
+
+  <!--
+    References, disc staging, and ISO packing for an Xbox title. Import this at the end of
+    a .csproj. Targets:
+
+      dotnet build                  -> Main.dll compiled against the runtime assemblies
+      dotnet build -t:RxdkStage     -> a disc directory (copy to a kit, or to xemu's HDD)
+      dotnet build -t:RxdkPack      -> a bootable .iso, fetching xdvdfs for this OS
+
+    Everything here runs on Windows, macOS, and Linux on x64 and arm64: the compile is the
+    .NET SDK's own Roslyn, and xdvdfs ships for all six.
+  -->
+
+  <Import Project="$(MSBuildThisFileDirectory)Rxdk.Common.targets" />
+  <Import Project="$(MSBuildThisFileDirectory)Rxdk.Content.targets" />
+
+  <!-- OutputPath is not set until the SDK's targets run, which is after this file is imported,
+       so these defaults have to be computed in a target rather than at evaluation time. -->
+  <Target Name="RxdkResolvePaths">
+    <PropertyGroup>
+      <RxdkStageDir Condition="'$(RxdkStageDir)' == ''">$(OutputPath)disc/</RxdkStageDir>
+      <RxdkIsoPath Condition="'$(RxdkIsoPath)' == ''">$(OutputPath)$(MSBuildProjectName).iso</RxdkIsoPath>
+      <!-- The prebuilt title image. In a checkout it is the linked host; in a release it sits
+           next to the runtime zip as RxdkMonoHost.xbe. -->
+      <RxdkXbe Condition="'$(RxdkXbe)' == '' and Exists('$(RxdkRuntimeDir)/RxdkMonoHost.xbe')">$(RxdkRuntimeDir)/RxdkMonoHost.xbe</RxdkXbe>
+      <RxdkXbe Condition="'$(RxdkXbe)' == '' and Exists('$(RxdkRuntimeDir)/obj/host/mono-host.xbe')">$(RxdkRuntimeDir)/obj/host/mono-host.xbe</RxdkXbe>
+    </PropertyGroup>
+  </Target>
+
+  <Target Name="RxdkStage" DependsOnTargets="RxdkCheckRuntime;Build;RxdkResolvePaths;RxdkBuildContent">
+    <Error Condition="'$(RxdkXbe)' == '' or !Exists('$(RxdkXbe)')"
+           Text="No title image found. Set RxdkXbe to RxdkMonoHost.xbe from the release." />
+
+    <ItemGroup>
+      <!-- mini-*.dll are the runtime's own regression suites; a title does not ship them. -->
+      <RxdkDiscAssembly Include="$(RxdkAssembliesDir)/*.dll"
+                        Exclude="$(RxdkAssembliesDir)/Main.dll;$(RxdkAssembliesDir)/mini-*.dll" />
+      <RxdkDiscAssembly Include="@(IntermediateAssembly)" />
+      <!-- Project and package references the title needs at run time, such as the MonoGame
+           framework. The runtime assemblies above are Private=false so they are not in here. -->
+      <RxdkDiscAssembly Include="@(ReferenceCopyLocalPaths)" Condition="'%(Extension)' == '.dll'" />
+    </ItemGroup>
+
+    <RemoveDir Directories="$(RxdkStageDir)" />
+    <Copy SourceFiles="$(RxdkXbe)" DestinationFiles="$(RxdkStageDir)default.xbe" />
+    <Copy SourceFiles="@(RxdkDiscAssembly)" DestinationFolder="$(RxdkStageDir)assemblies" />
+    <!-- Link is the path on the disc. Content built by MGCB carries one; a file put in RxdkContent
+         by hand without one goes in the root. -->
+    <Copy SourceFiles="@(RxdkContent)"
+          DestinationFiles="@(RxdkContent->'$(RxdkStageDir)%(Link)')"
+          Condition="'%(Link)' != ''" />
+    <Copy SourceFiles="@(RxdkContent)" DestinationFolder="$(RxdkStageDir)"
+          Condition="'%(Link)' == ''" />
+    <Message Importance="high" Text="staged $(RxdkStageDir) (default.xbe + assemblies/$(AssemblyName).dll)" />
+  </Target>
+
+  <!--
+    xdvdfs is published by XDVDFS-TR with a commit suffix in each asset name, so the download
+    URL has to be resolved from the release rather than hardcoded.
+  -->
+  <UsingTask TaskName="RxdkFetchXdvdfs" TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Platform ParameterType="System.String" Required="true" />
+      <CacheDir ParameterType="System.String" Required="true" />
+      <ToolPath ParameterType="System.String" Output="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.IO.Compression" />
+      <Using Namespace="System.Net.Http" />
+      <Using Namespace="System.Text.RegularExpressions" />
+      <Code Type="Fragment" Language="C#"><![CDATA[
+        string exe = Platform.StartsWith("windows") ? "xdvdfs.exe" : "xdvdfs";
+        string dir = Path.Combine(CacheDir, Platform);
+        string dest = Path.Combine(dir, exe);
+        if (!File.Exists(dest)) {
+          Directory.CreateDirectory(dir);
+          using (var http = new HttpClient()) {
+            http.DefaultRequestHeaders.Add("User-Agent", "rxdk-dotnet");
+            // api.github.com allows 60 unauthenticated calls an hour per address, which a
+            // shared CI runner can exhaust. Use a token when the environment offers one.
+            string token = Environment.GetEnvironmentVariable("GITHUB_TOKEN");
+            if (!string.IsNullOrEmpty(token))
+              http.DefaultRequestHeaders.Add("Authorization", "Bearer " + token);
+            string json = http.GetStringAsync("https://api.github.com/repos/Team-Resurgent/XDVDFS-TR/releases/latest").Result;
+            var m = Regex.Match(json, "\"browser_download_url\"\\s*:\\s*\"([^\"]*xdvdfs-" + Regex.Escape(Platform) + "-[^\"]*\\.zip)\"");
+            if (!m.Success) {
+              Log.LogError("no xdvdfs asset for " + Platform + " in the XDVDFS-TR release");
+              return false;
+            }
+            string zip = Path.Combine(dir, "xdvdfs.zip");
+            File.WriteAllBytes(zip, http.GetByteArrayAsync(m.Groups[1].Value).Result);
+            using (var archive = ZipFile.OpenRead(zip))
+              foreach (var entry in archive.Entries)
+                if (string.Equals(Path.GetFileName(entry.FullName), exe, StringComparison.OrdinalIgnoreCase))
+                  entry.ExtractToFile(dest, true);
+            File.Delete(zip);
+          }
+          if (!File.Exists(dest)) {
+            Log.LogError("the XDVDFS-TR zip for " + Platform + " held no " + exe);
+            return false;
+          }
+          Log.LogMessage(MessageImportance.High, "fetched xdvdfs for " + Platform);
+        }
+        ToolPath = dest;
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <Target Name="RxdkResolveXdvdfs" Condition="'$(XdvdfsPath)' == ''">
+    <PropertyGroup>
+      <_RxdkRid Condition="'$(_RxdkRid)' == ''">$(NETCoreSdkRuntimeIdentifier)</_RxdkRid>
+      <_RxdkOs Condition="$(_RxdkRid.StartsWith('win'))">windows</_RxdkOs>
+      <_RxdkOs Condition="$(_RxdkRid.StartsWith('osx'))">macos</_RxdkOs>
+      <_RxdkOs Condition="$(_RxdkRid.StartsWith('linux'))">linux</_RxdkOs>
+      <_RxdkArch Condition="$(_RxdkRid.EndsWith('arm64'))">arm64</_RxdkArch>
+      <_RxdkArch Condition="'$(_RxdkArch)' == ''">x64</_RxdkArch>
+      <_RxdkHome Condition="'$(OS)' == 'Windows_NT'">$(UserProfile)</_RxdkHome>
+      <_RxdkHome Condition="'$(OS)' != 'Windows_NT'">$(HOME)</_RxdkHome>
+      <RxdkToolsDir Condition="'$(RxdkToolsDir)' == ''">$(_RxdkHome)/.rxdk/tools</RxdkToolsDir>
+    </PropertyGroup>
+    <Error Condition="'$(_RxdkOs)' == ''" Text="Could not map '$(_RxdkRid)' to an xdvdfs build. Set XdvdfsPath to an xdvdfs binary." />
+    <RxdkFetchXdvdfs Platform="$(_RxdkOs)-$(_RxdkArch)" CacheDir="$(RxdkToolsDir)">
+      <Output TaskParameter="ToolPath" PropertyName="XdvdfsPath" />
+    </RxdkFetchXdvdfs>
+    <Exec Command="chmod +x &quot;$(XdvdfsPath)&quot;" Condition="'$(OS)' != 'Windows_NT'" />
+  </Target>
+
+  <Target Name="RxdkPack" DependsOnTargets="RxdkStage;RxdkResolveXdvdfs">
+    <Exec Command="&quot;$(XdvdfsPath)&quot; pack &quot;$(RxdkStageDir.TrimEnd('/'))&quot; &quot;$(RxdkIsoPath)&quot;"
+          StandardOutputImportance="low" />
+    <Message Importance="high" Text="packed $(RxdkIsoPath)" />
+  </Target>
+
+</Project>

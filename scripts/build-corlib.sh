@@ -54,7 +54,11 @@ expand() {  # $1 = .sources list -> resolved windows paths on stdout
 }
 expand "$OUT/all.txt"  | sort -u > "$OUT/paths.txt"
 expand "$OUT/excl.txt" | sort -u > "$OUT/exclpaths.txt"
-comm -23 "$OUT/paths.txt" "$OUT/exclpaths.txt" >> "$RSP"
+# Files of ours that stand in for a mono/corefx source, matched on basename. corefx's
+# OperatingSystem is the netstandard-era class with none of the IsWindows/IsIOS/... platform checks
+# .NET 5 added, which any library written since then calls; see the replacement for the rest.
+comm -23 "$OUT/paths.txt" "$OUT/exclpaths.txt" | grep -vE '\\OperatingSystem\.cs$' >> "$RSP"
+cygpath -w "$ROOT/build/managed/corlib-operatingsystem.cs" >> "$RSP"
 echo "sources: $(grep -c '\.cs"\?$' "$RSP" | tr -d ' ') files"
 
 echo "== compiling mscorlib.dll with Roslyn =="

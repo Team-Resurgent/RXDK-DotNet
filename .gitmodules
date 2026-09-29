@@ -2,3 +2,11 @@
 	path = vendor/mono
 	url = https://github.com/Team-Resurgent/mono.git
 	branch = xbox
+[submodule "vendor/monogame"]
+	path = vendor/monogame
+	url = https://github.com/Team-Resurgent/RXDK.MonoGame.git
+	branch = xbox
+[submodule "vendor/monogame-samples"]
+	path = vendor/monogame-samples
+	url = https://github.com/Team-Resurgent/RXDK.MonoGame.Samples.git
+	branch = xbox

@@ -787,6 +787,56 @@ static int rxdk_dsound_IDirectSoundStream_GetVoiceProperties(void * a0, void * a
     return IDirectSoundStream_GetVoiceProperties(a0, a1);
 }
 
+static int rxdk_dsound_XMediaObject_AddRef(void * a0)
+{
+    return ((int (__attribute__((stdcall)) *)(void *))(*(void ***)a0)[0])(a0);
+}
+
+static int rxdk_dsound_XMediaObject_Release(void * a0)
+{
+    return ((int (__attribute__((stdcall)) *)(void *))(*(void ***)a0)[1])(a0);
+}
+
+static int rxdk_dsound_XMediaObject_GetInfo(void * a0, void * a1)
+{
+    return ((int (__attribute__((stdcall)) *)(void *, void *))(*(void ***)a0)[2])(a0, a1);
+}
+
+static int rxdk_dsound_XMediaObject_GetStatus(void * a0, void * a1)
+{
+    return ((int (__attribute__((stdcall)) *)(void *, void *))(*(void ***)a0)[3])(a0, a1);
+}
+
+static int rxdk_dsound_XMediaObject_Process(void * a0, void * a1, void * a2)
+{
+    return ((int (__attribute__((stdcall)) *)(void *, void *, void *))(*(void ***)a0)[4])(a0, a1, a2);
+}
+
+static int rxdk_dsound_XMediaObject_Discontinuity(void * a0)
+{
+    return ((int (__attribute__((stdcall)) *)(void *))(*(void ***)a0)[5])(a0);
+}
+
+static int rxdk_dsound_XMediaObject_Flush(void * a0)
+{
+    return ((int (__attribute__((stdcall)) *)(void *))(*(void ***)a0)[6])(a0);
+}
+
+static int rxdk_dsound_XFileMediaObject_Seek(void * a0, int a1, int a2, void * a3)
+{
+    return ((int (__attribute__((stdcall)) *)(void *, int, int, void *))(*(void ***)a0)[7])(a0, a1, a2, a3);
+}
+
+static int rxdk_dsound_XFileMediaObject_GetLength(void * a0, void * a1)
+{
+    return ((int (__attribute__((stdcall)) *)(void *, void *))(*(void ***)a0)[8])(a0, a1);
+}
+
+static void rxdk_dsound_XFileMediaObject_DoWork(void * a0)
+{
+    ((void (__attribute__((stdcall)) *)(void *))(*(void ***)a0)[9])(a0);
+}
+
 static void *dsound_load(const char *name, int flags, char **err, void *ud)
 {
     (void)flags; (void)err; (void)ud;
@@ -929,6 +979,16 @@ static void *dsound_symbol(void *handle, const char *name, char **err, void *ud)
     if (!strcmp(name, "rxdk_dsound_IDirectSoundStream_PauseEx")) return (void *)&rxdk_dsound_IDirectSoundStream_PauseEx;
     if (!strcmp(name, "rxdk_dsound_IDirectSoundStream_FlushEx")) return (void *)&rxdk_dsound_IDirectSoundStream_FlushEx;
     if (!strcmp(name, "rxdk_dsound_IDirectSoundStream_GetVoiceProperties")) return (void *)&rxdk_dsound_IDirectSoundStream_GetVoiceProperties;
+    if (!strcmp(name, "rxdk_dsound_XMediaObject_AddRef")) return (void *)&rxdk_dsound_XMediaObject_AddRef;
+    if (!strcmp(name, "rxdk_dsound_XMediaObject_Release")) return (void *)&rxdk_dsound_XMediaObject_Release;
+    if (!strcmp(name, "rxdk_dsound_XMediaObject_GetInfo")) return (void *)&rxdk_dsound_XMediaObject_GetInfo;
+    if (!strcmp(name, "rxdk_dsound_XMediaObject_GetStatus")) return (void *)&rxdk_dsound_XMediaObject_GetStatus;
+    if (!strcmp(name, "rxdk_dsound_XMediaObject_Process")) return (void *)&rxdk_dsound_XMediaObject_Process;
+    if (!strcmp(name, "rxdk_dsound_XMediaObject_Discontinuity")) return (void *)&rxdk_dsound_XMediaObject_Discontinuity;
+    if (!strcmp(name, "rxdk_dsound_XMediaObject_Flush")) return (void *)&rxdk_dsound_XMediaObject_Flush;
+    if (!strcmp(name, "rxdk_dsound_XFileMediaObject_Seek")) return (void *)&rxdk_dsound_XFileMediaObject_Seek;
+    if (!strcmp(name, "rxdk_dsound_XFileMediaObject_GetLength")) return (void *)&rxdk_dsound_XFileMediaObject_GetLength;
+    if (!strcmp(name, "rxdk_dsound_XFileMediaObject_DoWork")) return (void *)&rxdk_dsound_XFileMediaObject_DoWork;
     return NULL;
 }
 
