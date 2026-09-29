@@ -1,0 +1,2 @@
+# libkernel is already on the base link. Register the bind and add no SDK library.
+rxdk_bind_kernel_register

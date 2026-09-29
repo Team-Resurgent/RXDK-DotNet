@@ -36,19 +36,74 @@ typedef struct {
 
 typedef char rxdk_keystroke_size[(sizeof(RxdkKeystroke) == 3) ? 1 : -1];
 
+typedef struct {
+    unsigned int packet;
+    unsigned char buttons;
+    signed char x, y, wheel;
+} __attribute__((packed)) RxdkMouseState;
+
+typedef char rxdk_mouse_state_size[(sizeof(RxdkMouseState) == 8) ? 1 : -1];
+
+typedef struct {
+    unsigned int packet;
+    unsigned short key;
+    unsigned short dt;
+} __attribute__((packed)) RxdkIrState;
+
+typedef char rxdk_ir_state_size[(sizeof(RxdkIrState) == 8) ? 1 : -1];
+
 static int devices_ready;
 static int keyboard_ready;
 
+/* Same polling the input samples pass to XInputOpen: auto-poll and interrupt-out.
+ * NULL would use the type default, which sends rumble as a control SET_REPORT. */
+static XINPUT_POLLING_PARAMETERS pad_poll = { 1, 1, 0, 8, 8, 0 };
+
+/* XInputSetState is asynchronous and keeps this buffer until the transfer
+ * completes. The samples store it on the gamepad for the life of the open. */
+static void *pad_open[4];
+static XINPUT_FEEDBACK pad_feedback[4];
+
+static int pad_slot(void *handle)
+{
+    int i;
+    for (i = 0; i < 4; i++)
+        if (pad_open[i] == handle)
+            return i;
+    return -1;
+}
+
 static void rxdk_input_init(void)
 {
-    XDEVICE_PREALLOC_TYPE types[2];
+    XDEVICE_PREALLOC_TYPE types[4];
     if (devices_ready)
         return;
     types[0].DeviceType = XDEVICE_TYPE_GAMEPAD;
     types[0].dwPreallocCount = 4;
     types[1].DeviceType = XDEVICE_TYPE_DEBUG_KEYBOARD;
     types[1].dwPreallocCount = 1;
-    XInitDevices(2, types);
+    types[2].DeviceType = XDEVICE_TYPE_DEBUG_MOUSE;
+    types[2].dwPreallocCount = 4;
+    types[3].DeviceType = XDEVICE_TYPE_IR_REMOTE;
+    types[3].dwPreallocCount = 1;
+    XInitDevices(4, types);
+    /* Enumeration is asynchronous. A pad already attached (xemu port 1 is Xbox
+     * port 0) is invisible to XGetDevices until this goes idle. */
+    {
+        DWORD start = GetTickCount();
+        DWORD insertions = 0, removals = 0;
+        for (;;) {
+            DWORD now = GetTickCount();
+            if (XGetDeviceEnumerationStatus() == XDEVICE_ENUMERATION_IDLE) {
+                XGetDeviceChanges(XDEVICE_TYPE_GAMEPAD, &insertions, &removals);
+                if (XGetDevices(XDEVICE_TYPE_GAMEPAD) != 0)
+                    break;
+            }
+            if ((DWORD)(now - start) >= 2000)
+                break;
+            Sleep(10);
+        }
+    }
     devices_ready = 1;
 }
 
@@ -60,14 +115,25 @@ static unsigned int rxdk_input_connected_mask(void)
 
 static void *rxdk_input_open_gamepad(unsigned int port)
 {
+    void *handle;
     rxdk_input_init();
-    return XInputOpen(XDEVICE_TYPE_GAMEPAD, port, XDEVICE_NO_SLOT, NULL);
+    if (port > 3)
+        return NULL;
+    memset(&pad_feedback[port], 0, sizeof(pad_feedback[port]));
+    handle = XInputOpen(XDEVICE_TYPE_GAMEPAD, port, XDEVICE_NO_SLOT, &pad_poll);
+    pad_open[port] = handle;
+    return handle;
 }
 
 static void rxdk_input_close(void *handle)
 {
-    if (handle)
-        XInputClose(handle);
+    int slot;
+    if (!handle)
+        return;
+    slot = pad_slot(handle);
+    if (slot >= 0)
+        pad_open[slot] = NULL;
+    XInputClose(handle);
 }
 
 static unsigned int rxdk_input_get_state(void *handle, RxdkPadState *state)
@@ -99,13 +165,20 @@ static unsigned int rxdk_input_get_state(void *handle, RxdkPadState *state)
 
 static unsigned int rxdk_input_set_vibration(void *handle, unsigned short left, unsigned short right)
 {
-    XINPUT_FEEDBACK fb;
+    int slot;
+    XINPUT_FEEDBACK *fb;
     if (!handle)
         return 1167;
-    memset(&fb, 0, sizeof(fb));
-    fb.Rumble.wLeftMotorSpeed = left;
-    fb.Rumble.wRightMotorSpeed = right;
-    return (unsigned int)XInputSetState(handle, &fb);
+    slot = pad_slot(handle);
+    if (slot < 0)
+        return 1167;
+    fb = &pad_feedback[slot];
+    /* The samples skip a new send while the previous one is still in flight. */
+    if (fb->Header.dwStatus == ERROR_IO_PENDING)
+        return ERROR_IO_PENDING;
+    fb->Rumble.wLeftMotorSpeed = left;
+    fb->Rumble.wRightMotorSpeed = right;
+    return (unsigned int)XInputSetState(handle, fb);
 }
 
 static unsigned int rxdk_input_init_keyboard(void)
@@ -116,15 +189,106 @@ static unsigned int rxdk_input_init_keyboard(void)
     if (keyboard_ready)
         return 0;
     memset(&p, 0, sizeof(p));
-    p.dwFlags = XINPUT_DEBUG_KEYQUEUE_FLAG_KEYDOWN | XINPUT_DEBUG_KEYQUEUE_FLAG_KEYREPEAT
-        | XINPUT_DEBUG_KEYQUEUE_FLAG_KEYUP | XINPUT_DEBUG_KEYQUEUE_FLAG_ONE_QUEUE;
-    p.dwQueueSize = 32;
-    p.dwRepeatDelay = 400;
-    p.dwRepeatInterval = 150;
+    p.dwFlags = XINPUT_DEBUG_KEYQUEUE_FLAG_KEYDOWN | XINPUT_DEBUG_KEYQUEUE_FLAG_KEYREPEAT;
+    p.dwQueueSize = 25;
+    p.dwRepeatDelay = 500;
+    p.dwRepeatInterval = 50;
     rc = (unsigned int)XInputDebugInitKeyboardQueue(&p);
     if (rc == 0)
         keyboard_ready = 1;
     return rc;
+}
+
+static unsigned int rxdk_input_mouse_mask(void)
+{
+    rxdk_input_init();
+    return (unsigned int)XGetDevices(XDEVICE_TYPE_DEBUG_MOUSE);
+}
+
+static void *rxdk_input_open_mouse(unsigned int port)
+{
+    rxdk_input_init();
+    if (port > 3)
+        return NULL;
+    /* NULL polling uses the mouse type default: auto-poll, no output reports. */
+    return XInputOpen(XDEVICE_TYPE_DEBUG_MOUSE, port, XDEVICE_NO_SLOT, NULL);
+}
+
+static unsigned int rxdk_input_get_mouse(void *handle, RxdkMouseState *state)
+{
+    XINPUT_STATE raw;
+    unsigned int rc;
+    if (!handle || !state)
+        return 1167;
+    memset(&raw, 0, sizeof(raw));
+    rc = (unsigned int)XInputGetState(handle, &raw);
+    if (rc != 0)
+        return rc;
+    state->packet = (unsigned int)raw.dwPacketNumber;
+    state->buttons = raw.DebugMouse.bButtons;
+    state->x = raw.DebugMouse.cMickeysX;
+    state->y = raw.DebugMouse.cMickeysY;
+    state->wheel = raw.DebugMouse.cWheel;
+    return 0;
+}
+
+static unsigned int rxdk_input_ir_mask(void)
+{
+    rxdk_input_init();
+    return (unsigned int)XGetDevices(XDEVICE_TYPE_IR_REMOTE);
+}
+
+static void *rxdk_input_open_ir(unsigned int port)
+{
+    rxdk_input_init();
+    if (port > 3)
+        return NULL;
+    return XInputOpen(XDEVICE_TYPE_IR_REMOTE, port, XDEVICE_NO_SLOT, NULL);
+}
+
+static unsigned int rxdk_input_get_ir(void *handle, RxdkIrState *state)
+{
+    XINPUT_STATE raw;
+    unsigned char *bytes;
+    unsigned int rc;
+    if (!handle || !state)
+        return 1167;
+    memset(&raw, 0, sizeof(raw));
+    rc = (unsigned int)XInputGetState(handle, &raw);
+    if (rc != 0)
+        return rc;
+    /* The public state union has no IR member. The report is the first four
+     * bytes: key code, then time since the previous code. */
+    bytes = (unsigned char *)&raw.Gamepad;
+    state->packet = (unsigned int)raw.dwPacketNumber;
+    state->key = (unsigned short)(bytes[0] | (bytes[1] << 8));
+    state->dt = (unsigned short)(bytes[2] | (bytes[3] << 8));
+    return 0;
+}
+
+static unsigned int rxdk_input_subtype(void *handle)
+{
+    XINPUT_CAPABILITIES caps;
+    if (!handle)
+        return 0;
+    memset(&caps, 0, sizeof(caps));
+    if (XInputGetCapabilities(handle, &caps) != 0)
+        return 0;
+    return caps.SubType;
+}
+
+static unsigned int rxdk_input_set_lightgun_calibration(
+    void *handle, unsigned short center_x, unsigned short center_y,
+    unsigned short upper_left_x, unsigned short upper_left_y)
+{
+    XINPUT_LIGHTGUN_CALIBRATION_OFFSETS offsets;
+    if (!handle)
+        return 1167;
+    offsets.wCenterX = center_x;
+    offsets.wCenterY = center_y;
+    offsets.wUpperLeftX = upper_left_x;
+    offsets.wUpperLeftY = upper_left_y;
+    return (unsigned int)XInputSetLightgunCalibration(handle, &offsets);
 }
 
 static unsigned int rxdk_input_get_keystroke(RxdkKeystroke *key)
@@ -168,6 +332,14 @@ static void *xapi_symbol(void *handle, const char *name, char **err, void *ud)
     if (!strcmp(name, "rxdk_input_set_vibration")) return (void *)&rxdk_input_set_vibration;
     if (!strcmp(name, "rxdk_input_init_keyboard")) return (void *)&rxdk_input_init_keyboard;
     if (!strcmp(name, "rxdk_input_get_keystroke")) return (void *)&rxdk_input_get_keystroke;
+    if (!strcmp(name, "rxdk_input_mouse_mask")) return (void *)&rxdk_input_mouse_mask;
+    if (!strcmp(name, "rxdk_input_open_mouse")) return (void *)&rxdk_input_open_mouse;
+    if (!strcmp(name, "rxdk_input_get_mouse")) return (void *)&rxdk_input_get_mouse;
+    if (!strcmp(name, "rxdk_input_ir_mask")) return (void *)&rxdk_input_ir_mask;
+    if (!strcmp(name, "rxdk_input_open_ir")) return (void *)&rxdk_input_open_ir;
+    if (!strcmp(name, "rxdk_input_get_ir")) return (void *)&rxdk_input_get_ir;
+    if (!strcmp(name, "rxdk_input_subtype")) return (void *)&rxdk_input_subtype;
+    if (!strcmp(name, "rxdk_input_set_lightgun_calibration")) return (void *)&rxdk_input_set_lightgun_calibration;
     return NULL;
 }
 
@@ -182,3 +354,14 @@ void rxdk_bind_xapi_register(void)
 {
     mono_dl_fallback_register(xapi_load, xapi_symbol, xapi_close, NULL);
 }
+
+/* XInput pulls the USB C++ objects, which pull libunwind. That object takes the
+ * address of these section bounds. An empty span means there is nothing to walk. */
+__asm__(
+    ".section .eh_frame,\"dr\"\n"
+    ".globl ___eh_frame_start\n"
+    "___eh_frame_start:\n"
+    ".globl ___eh_frame_end\n"
+    "___eh_frame_end:\n"
+    ".text\n"
+);

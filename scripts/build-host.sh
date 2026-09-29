@@ -76,9 +76,8 @@ SFLAGS=(
 echo "   ok"
 
 # Selective SDK binds. A *.dll.libs sidecar next to an assembly names rxdk_bind_*_register
-# symbols and any extra SDK .lib files. The stock title ships Rxdk.Input (libxapi is already
-# linked) and must not gain libd3d8. A title that adds Rxdk.Graphics.dll relinks the XBE;
-# swapping Main.dll on this ISO cannot pull Direct3D in afterwards.
+# symbols and any extra SDK .lib files. Rxdk.Graphics pulls libd3d8 and libxgraphics
+# (matrix math). Swapping Main.dll on an ISO built without that sidecar cannot add them.
 echo "== selective SDK binds =="
 CORLIB_OUT="$ROOT/build-out/corlib"
 BIND_SYMS=()
@@ -141,11 +140,25 @@ if [ "${#EXTRA_LIBS[@]}" -gt 0 ]; then
       libd3d8.lib|libd3d8i.lib)
         [ -f "$CORLIB_OUT/Rxdk.Graphics.dll" ] || { echo "ERROR: $lib linked without Rxdk.Graphics.dll"; exit 1; }
         ;;
-      libd3dx8.lib|libxgraphics.lib)
-        [ -f "$CORLIB_OUT/Rxdk.Graphics.Utility.dll" ] || { echo "ERROR: $lib linked without Rxdk.Graphics.Utility.dll"; exit 1; }
+      libd3dx8.lib)
+        if [ ! -f "$CORLIB_OUT/Rxdk.Graphics.dll" ] && [ ! -f "$CORLIB_OUT/Rxdk.Graphics.Utility.dll" ]; then
+          echo "ERROR: $lib linked without Rxdk.Graphics.dll"
+          exit 1
+        fi
+        ;;
+      libxgraphics.lib)
+        if [ ! -f "$CORLIB_OUT/Rxdk.Graphics.dll" ] && [ ! -f "$CORLIB_OUT/Rxdk.Graphics.Utility.dll" ]; then
+          echo "ERROR: $lib linked without Rxdk.Graphics.dll"
+          exit 1
+        fi
         ;;
       libdsound.lib)
-        [ -f "$CORLIB_OUT/Rxdk.Audio.dll" ] || { echo "ERROR: $lib linked without Rxdk.Audio.dll"; exit 1; }
+        # Music, Xact, and Video call into libdsound as well as Audio.
+        if [ ! -f "$CORLIB_OUT/Rxdk.Audio.dll" ] && [ ! -f "$CORLIB_OUT/Rxdk.Music.dll" ] \
+          && [ ! -f "$CORLIB_OUT/Rxdk.Xact.dll" ] && [ ! -f "$CORLIB_OUT/Rxdk.Video.dll" ]; then
+          echo "ERROR: $lib linked without Rxdk.Audio.dll"
+          exit 1
+        fi
         ;;
       libdmusic.lib)
         [ -f "$CORLIB_OUT/Rxdk.Music.dll" ] || { echo "ERROR: $lib linked without Rxdk.Music.dll"; exit 1; }
@@ -156,6 +169,23 @@ if [ "${#EXTRA_LIBS[@]}" -gt 0 ]; then
       libxmv.lib)
         [ -f "$CORLIB_OUT/Rxdk.Video.dll" ] || { echo "ERROR: $lib linked without Rxdk.Video.dll"; exit 1; }
         ;;
+      libuix.lib)
+        [ -f "$CORLIB_OUT/Rxdk.Uix.dll" ] || { echo "ERROR: $lib linked without Rxdk.Uix.dll"; exit 1; }
+        ;;
+      libxonline.lib|libxneto.lib)
+        # libxneto is the online build of libxnet and supplies libxonline's CXoBase.
+        # Uix calls the XOnline friends/presence APIs too.
+        if [ ! -f "$CORLIB_OUT/Rxdk.Online.dll" ] && [ ! -f "$CORLIB_OUT/Rxdk.Uix.dll" ]; then
+          echo "ERROR: $lib linked without Rxdk.Online.dll"
+          exit 1
+        fi
+        ;;
+      libxvoice.lib)
+        [ -f "$CORLIB_OUT/Rxdk.Voice.dll" ] || { echo "ERROR: $lib linked without Rxdk.Voice.dll"; exit 1; }
+        ;;
+      # libxbdm is never allowed: it binds xbdm.dll by ordinal, and a title that
+      # imports it fails to load with STATUS_ORDINAL_NOT_FOUND.
+      libxbdm.lib) echo "ERROR: libxbdm cannot be linked into a title"; exit 1 ;;
       *) echo "ERROR: sidecar names unknown SDK lib $lib"; exit 1 ;;
     esac
     EXTRA_ARGS+=("$(cygpath -w "$lib")")
@@ -182,9 +212,9 @@ MSYS2_ARG_CONV_EXCL='*' "$CLANG" \
   -target i686-pc-windows-gnu -march=pentium3 -nostdlib -nostartfiles \
   -Wl,--image-base=0x10000 -fuse-ld=lld -e XapiTitleStartup \
   -Wl,--error-limit=0 -Wl,--allow-multiple-definition \
-  -Wl,--why-extract="$(cygpath -w "$OUT/why-extract.txt")" \
   -o "$(W "$OUT/mono-host.exe")" 2> "$OUT/link.err"
-echo "   link exit $?"
+link_rc=$?
+echo "   link exit $link_rc"
 
 echo "== distinct undefined symbols ($(grep -c 'undefined symbol' "$OUT/link.err")) =="
 grep -oE 'undefined symbol: [^ ]+' "$OUT/link.err" | sed 's/undefined symbol: //' | sort -u > "$OUT/undef.txt"
@@ -220,7 +250,7 @@ if [ -f "$OUT/mono-host.exe" ]; then
   echo "packaged -> build-out/obj/host/RxdkMonoHost.iso  (boot: xemu -dvd_path <iso> -device lpc47m157 -serial stdio)"
 fi
 und=$(wc -l < "$OUT/undef.txt" | tr -d '[:space:]')
-if [ "$und" != 0 ] || [ ! -f "$OUT/RxdkMonoHost.iso" ]; then
-  echo "ERROR: link undefined=$und or ISO missing"
+if [ "$und" != 0 ] || [ "${link_rc:-1}" != 0 ] || [ ! -f "$OUT/RxdkMonoHost.iso" ]; then
+  echo "ERROR: link exit=${link_rc:-?} undefined=$und or ISO missing"
   exit 1
 fi

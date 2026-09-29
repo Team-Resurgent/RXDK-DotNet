@@ -1,0 +1,6 @@
+rxdk_bind_d3d8_register
+rxdk_bind_xgmath_register
+libd3d8.lib
+libd3d8i.lib
+libxgraphics.lib
+libd3dx8.lib

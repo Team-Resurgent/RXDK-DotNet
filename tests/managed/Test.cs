@@ -333,8 +333,7 @@ public static class RxdkTest
         catch (DivideByZeroException) { return true; }
     }
 
-    // GamePad and Keyboard over libxapi. No controller is required: a missing pad reports
-    // disconnected, and an empty keyboard queue is a successful poll.
+    // GamePad and Keyboard over libxapi. xemu port 1 is Xbox port 0, and that pad is connected.
     static bool T_Input()
     {
         bool range = false;
@@ -342,13 +341,26 @@ public static class RxdkTest
         catch (ArgumentOutOfRangeException) { range = true; }
         if (!range) return false;
         uint mask = Rxdk.GamePad.ConnectedPorts;
+        RxdkConsole.Write("  input ports=" + IStr((int)mask) + "\n");
         using (Rxdk.GamePad pad = Rxdk.GamePad.Open(0))
         {
-            bool expect = (mask & 1u) != 0;
-            if (pad.IsConnected != expect) return false;
+            if ((mask & 1u) == 0 || !pad.IsConnected) return false;
             Rxdk.GamePadState s = pad.GetState();
-            if (s.IsConnected != pad.IsConnected) return false;
-            if (pad.IsConnected) pad.SetVibration(0, 0);
+            if (!s.IsConnected) return false;
+            pad.SetVibration(0, 0);
+            if (pad.Kind != Rxdk.GamePadKind.GamePad)
+                return false;
+            RxdkConsole.Write("  input kind=" + IStr((int)pad.Kind) + "\n");
+        }
+        using (Rxdk.Mouse mouse = Rxdk.Mouse.Open(0))
+        {
+            Rxdk.MouseState ms = mouse.GetState();
+            RxdkConsole.Write("  input mouse=" + (ms.IsConnected ? "1" : "0") + "\n");
+        }
+        using (Rxdk.IrRemote ir = Rxdk.IrRemote.Open(0))
+        {
+            Rxdk.IrRemoteState rs = ir.GetState();
+            RxdkConsole.Write("  input ir=" + (rs.IsConnected ? "1" : "0") + "\n");
         }
         using (Rxdk.Keyboard kb = Rxdk.Keyboard.Open())
         {
@@ -356,6 +368,41 @@ public static class RxdkTest
             kb.TryGetKeystroke(out key);
         }
         return true;
+    }
+
+    // Kernel exports managed code does not already cover. The link is not D: or T:.
+    static bool T_Kernel()
+    {
+        string link = "\\??\\RxdkLink";
+        string device = "\\Device\\CdRom0";
+        int created = Rxdk.Kernel.IoCreateSymbolicLink(link, device);
+        RxdkConsole.Write("  kernel create=" + IStr(created) + "\n");
+        if (created < 0)
+            return false;
+        IntPtr handle;
+        int opened = Rxdk.Kernel.NtOpenSymbolicLinkObject(out handle, link);
+        if (opened < 0)
+            return false;
+        string target;
+        uint returned;
+        int queried = Rxdk.Kernel.NtQuerySymbolicLinkObject(handle, out target, out returned);
+        int closed = Rxdk.Kernel.NtClose(handle);
+        int deleted = Rxdk.Kernel.IoDeleteSymbolicLink(link);
+        Rxdk.Kernel.AvGetSavedDataAddress();
+        RxdkConsole.Write("  kernel target=" + target + "\n");
+        return queried >= 0 && closed >= 0 && deleted >= 0 && target != null && target.IndexOf("CdRom0") >= 0;
+    }
+
+    static bool T_Resource()
+    {
+        System.Reflection.Assembly asm = typeof(RxdkTest).Assembly;
+        Stream stream = asm.GetManifestResourceStream("Rxdk.Hello.txt");
+        if (stream == null)
+            return false;
+        byte[] buf = new byte[8];
+        int n = stream.Read(buf, 0, buf.Length);
+        stream.Close();
+        return n == 5 && buf[0] == (byte)'h' && buf[1] == (byte)'e' && buf[2] == (byte)'l' && buf[3] == (byte)'l' && buf[4] == (byte)'o';
     }
 
     // ---- runner -----------------------------------------------------------------------------
@@ -388,6 +435,7 @@ public static class RxdkTest
         try { Check("DnsAddr",      T_DnsAddr()); }      catch (Exception e) { Exc("DnsAddr", e); }
         try { Check("DnsLookup",    T_DnsLookup()); }    catch (Exception e) { Exc("DnsLookup", e); }
         try { Check("Input",        T_Input()); }        catch (Exception e) { Exc("Input", e); }
+        try { Check("Kernel",       T_Kernel()); }       catch (Exception e) { Exc("Kernel", e); }
         // System.Console.WriteLine now WORKS (routes to the debug UART via the PAL console handle).
         // The fix: Environment.NewLine was returning null because icall-windows.c failed to compile
         // (shlobj.h), so its mono_icall_get_new_line was shadowed by a null-returning stub, NREing
@@ -429,7 +477,9 @@ public static class RxdkTest
         try { Check("ExcRethrow",  T_ExcRethrow()); }  catch (Exception e) { Exc("ExcRethrow", e); }
         try { Check("NullRef",     T_NullRef()); }     catch (Exception e) { Exc("NullRef", e); }
         try { Check("DivZero",     T_DivZero()); }     catch (Exception e) { Exc("DivZero", e); }
+        try { Check("Resource",    T_Resource()); }    catch (Exception e) { Exc("Resource", e); }
         RxdkConsole.Write("=== SUMMARY passed=" + IStr(passed) + " failed=" + IStr(failed) + " ===\n");
+        Rxdk.Triangle.Show();
         return failed;
     }
 

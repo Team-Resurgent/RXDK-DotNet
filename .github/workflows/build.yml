@@ -106,21 +106,43 @@ jobs:
           bash scripts/build-corlib.sh
           bash scripts/build-syscore.sh
           bash scripts/build-input.sh
+          bash scripts/build-kernel.sh
+          bash scripts/build-graphics.sh
+          bash scripts/build-sdklibs.sh
           bash scripts/build-testasm.sh
           bash scripts/build-minitests.sh
           bash scripts/build-host.sh
           for f in libeglib.lib libmonoutils.lib libmonoruntime.lib libmini.lib; do
             test -f "build-out/lib/$f"
           done
-          for f in mscorlib.dll System.dll System.Core.dll generics-variant-types.dll Rxdk.Input.dll Main.dll; do
+          for f in mscorlib.dll System.dll System.Core.dll generics-variant-types.dll Rxdk.Input.dll Rxdk.Kernel.dll Rxdk.Graphics.dll Rxdk.Audio.dll Rxdk.Music.dll Rxdk.Xact.dll Rxdk.Video.dll Rxdk.Uix.dll Rxdk.Online.dll Rxdk.Voice.dll Main.dll; do
             test -f "build-out/corlib/$f"
           done
           n=$(ls build-out/corlib/mini-*.dll | wc -l | tr -d '[:space:]')
           test "$n" = 15
           test -f build-out/obj/host/RxdkMonoHost.iso
           test -f build-out/obj/host/mono-host.xbe
-          if grep -q 'libd3d8' build-out/obj/host/sdk-extra-libs.txt; then
-            echo "stock host linked libd3d8"
+          if ! grep -q 'libd3d8' build-out/obj/host/sdk-extra-libs.txt; then
+            echo "graphics title did not link libd3d8"
+            exit 1
+          fi
+          if ! grep -q 'libxgraphics' build-out/obj/host/sdk-extra-libs.txt; then
+            echo "graphics title did not link libxgraphics"
+            exit 1
+          fi
+          if ! grep -q 'libd3dx8' build-out/obj/host/sdk-extra-libs.txt; then
+            echo "graphics title did not link libd3dx8"
+            exit 1
+          fi
+          for l in libdsound libdmusic libxact libxmv libuix libxonline libxneto; do
+            if ! grep -q "$l" build-out/obj/host/sdk-extra-libs.txt; then
+              echo "title did not link $l"
+              exit 1
+            fi
+          done
+          # libxbdm binds xbdm.dll by ordinal; a title linking it cannot load.
+          if grep -q 'libxbdm' build-out/obj/host/sdk-extra-libs.txt; then
+            echo "libxbdm must never be linked"
             exit 1
           fi
 
@@ -215,6 +237,6 @@ jobs:
 
             - `RxdkMonoHost.iso` — boot on xemu (`-dvd_path` this file, `-device lpc47m157 -serial stdio`)
             - `RxdkMonoHost.xbe` — the title image inside that ISO
-            - `rxdk-dotnet-runtime.zip` — `lib/` (libeglib, libmonoutils, libmonoruntime, libmini) and `assemblies/` (mscorlib, System, System.Core, Rxdk.Input, and Main.dll)
+            - `rxdk-dotnet-runtime.zip` — `lib/` (libeglib, libmonoutils, libmonoruntime, libmini) and `assemblies/` (mscorlib, System, System.Core, Rxdk.Input, Rxdk.Kernel, Rxdk.Graphics, Rxdk.Audio, Rxdk.Music, Rxdk.Xact, Rxdk.Video, Rxdk.Uix, Rxdk.Online, Rxdk.Voice, and Main.dll)
           files: |
             dist/*

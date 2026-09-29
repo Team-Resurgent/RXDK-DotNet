@@ -1,5 +1,7 @@
-// Managed Xbox input over libxapi. The DllImports stay internal. Callers own a GamePad
-// or Keyboard and dispose it. The native handle never leaves this assembly.
+// Managed Xbox input over libxapi. The DllImports stay internal. Callers own a device
+// and dispose it. The native handle never leaves this assembly. Game pads, wheels,
+// light guns, and the other pad-shaped controllers share one report. Mouse and the
+// IR remote are their own devices.
 using System;
 using System.Runtime.InteropServices;
 
@@ -15,7 +17,26 @@ namespace Rxdk
         Start = 0x0010,
         Back = 0x0020,
         LeftThumb = 0x0040,
-        RightThumb = 0x0080
+        RightThumb = 0x0080,
+        LightGunOnScreen = 0x2000,
+        LightGunFrameDoubler = 0x4000,
+        LightGunLineDoubler = 0x8000
+    }
+
+    public enum GamePadKind : byte
+    {
+        Unknown = 0,
+        GamePad = 0x01,
+        GamePadAlt = 0x02,
+        Wheel = 0x10,
+        ArcadeStick = 0x20,
+        DigitalArcadeStick = 0x21,
+        FlightStick = 0x30,
+        Snowboard = 0x40,
+        LightGun = 0x50,
+        RadioFlightControl = 0x60,
+        FishingRod = 0x70,
+        DancePad = 0x80
     }
 
     public struct GamePadState
@@ -98,6 +119,25 @@ namespace Rxdk
             return state;
         }
 
+        public GamePadKind Kind
+        {
+            get
+            {
+                if (disposed || handle == IntPtr.Zero)
+                    return GamePadKind.Unknown;
+                return (GamePadKind)InputNative.Subtype(handle);
+            }
+        }
+
+        public void SetLightgunCalibration(short centerX, short centerY, short upperLeftX, short upperLeftY)
+        {
+            if (disposed)
+                throw new ObjectDisposedException("GamePad");
+            if (handle == IntPtr.Zero)
+                return;
+            InputNative.SetLightgunCalibration(handle, (ushort)centerX, (ushort)centerY, (ushort)upperLeftX, (ushort)upperLeftY);
+        }
+
         public void SetVibration(ushort leftMotor, ushort rightMotor)
         {
             if (disposed)
@@ -163,6 +203,158 @@ namespace Rxdk
         ~Keyboard() { Dispose(); }
     }
 
+    [Flags]
+    public enum MouseButton : byte
+    {
+        Left = 0x01,
+        Right = 0x02,
+        Middle = 0x04,
+        X1 = 0x08,
+        X2 = 0x10
+    }
+
+    public struct MouseState
+    {
+        public bool IsConnected;
+        public uint PacketNumber;
+        public MouseButton Buttons;
+        public sbyte X, Y, Wheel;
+
+        public bool IsDown(MouseButton button) { return (Buttons & button) == button; }
+    }
+
+    public sealed class Mouse : IDisposable
+    {
+        IntPtr handle;
+        readonly int port;
+        bool disposed;
+
+        Mouse(int port, IntPtr handle)
+        {
+            this.port = port;
+            this.handle = handle;
+        }
+
+        public int Port { get { return port; } }
+        public bool IsConnected { get { return handle != IntPtr.Zero; } }
+
+        public static uint ConnectedPorts
+        {
+            get { InputNative.Init(); return InputNative.MouseMask(); }
+        }
+
+        public static Mouse Open(int port)
+        {
+            if (port < 0 || port > 3)
+                throw new ArgumentOutOfRangeException("port");
+            return new Mouse(port, InputNative.OpenMouse((uint)port));
+        }
+
+        public MouseState GetState()
+        {
+            if (disposed)
+                throw new ObjectDisposedException("Mouse");
+            MouseState state = new MouseState();
+            if (handle == IntPtr.Zero)
+                return state;
+            InputNative.MouseRaw raw = new InputNative.MouseRaw();
+            uint rc = InputNative.GetMouse(handle, ref raw);
+            if (rc != 0)
+                return state;
+            state.IsConnected = true;
+            state.PacketNumber = raw.Packet;
+            state.Buttons = (MouseButton)raw.Buttons;
+            state.X = raw.X;
+            state.Y = raw.Y;
+            state.Wheel = raw.Wheel;
+            return state;
+        }
+
+        public void Dispose()
+        {
+            if (disposed)
+                return;
+            disposed = true;
+            if (handle != IntPtr.Zero)
+            {
+                InputNative.Close(handle);
+                handle = IntPtr.Zero;
+            }
+            GC.SuppressFinalize(this);
+        }
+
+        ~Mouse() { Dispose(); }
+    }
+
+    public struct IrRemoteState
+    {
+        public bool IsConnected;
+        public uint PacketNumber;
+        public ushort KeyCode;
+        public ushort TimeDelta;
+    }
+
+    public sealed class IrRemote : IDisposable
+    {
+        IntPtr handle;
+        readonly int port;
+        bool disposed;
+
+        IrRemote(int port, IntPtr handle)
+        {
+            this.port = port;
+            this.handle = handle;
+        }
+
+        public int Port { get { return port; } }
+        public bool IsConnected { get { return handle != IntPtr.Zero; } }
+
+        public static uint ConnectedPorts
+        {
+            get { InputNative.Init(); return InputNative.IrMask(); }
+        }
+
+        public static IrRemote Open(int port)
+        {
+            if (port < 0 || port > 3)
+                throw new ArgumentOutOfRangeException("port");
+            return new IrRemote(port, InputNative.OpenIr((uint)port));
+        }
+
+        public IrRemoteState GetState()
+        {
+            if (disposed)
+                throw new ObjectDisposedException("IrRemote");
+            IrRemoteState state = new IrRemoteState();
+            if (handle == IntPtr.Zero)
+                return state;
+            InputNative.IrRaw raw = new InputNative.IrRaw();
+            uint rc = InputNative.GetIr(handle, ref raw);
+            if (rc != 0)
+                return state;
+            state.IsConnected = true;
+            state.PacketNumber = raw.Packet;
+            state.KeyCode = raw.Key;
+            state.TimeDelta = raw.Dt;
+            return state;
+        }
+
+        public void Dispose()
+        {
+            if (disposed)
+                return;
+            disposed = true;
+            if (handle != IntPtr.Zero)
+            {
+                InputNative.Close(handle);
+                handle = IntPtr.Zero;
+            }
+            GC.SuppressFinalize(this);
+        }
+
+        ~IrRemote() { Dispose(); }
+    }
+
     static class InputNative
     {
         [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -180,6 +372,22 @@ namespace Rxdk
             public byte VirtualKey;
             public byte Ascii;
             public byte Flags;
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        internal struct MouseRaw
+        {
+            public uint Packet;
+            public byte Buttons;
+            public sbyte X, Y, Wheel;
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        internal struct IrRaw
+        {
+            public uint Packet;
+            public ushort Key;
+            public ushort Dt;
         }
 
         [DllImport("xapi", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
@@ -214,5 +422,41 @@ namespace Rxdk
         internal static void SetVibration(IntPtr handle, ushort left, ushort right) { rxdk_input_set_vibration(handle, left, right); }
         internal static uint InitKeyboard() { return rxdk_input_init_keyboard(); }
         internal static uint GetKeystroke(ref KeyRaw key) { return rxdk_input_get_keystroke(ref key); }
+
+        [DllImport("xapi", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        static extern uint rxdk_input_mouse_mask();
+
+        [DllImport("xapi", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        static extern IntPtr rxdk_input_open_mouse(uint port);
+
+        [DllImport("xapi", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        static extern uint rxdk_input_get_mouse(IntPtr handle, ref MouseRaw state);
+
+        [DllImport("xapi", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        static extern uint rxdk_input_ir_mask();
+
+        [DllImport("xapi", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        static extern IntPtr rxdk_input_open_ir(uint port);
+
+        [DllImport("xapi", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        static extern uint rxdk_input_get_ir(IntPtr handle, ref IrRaw state);
+
+        [DllImport("xapi", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        static extern uint rxdk_input_subtype(IntPtr handle);
+
+        [DllImport("xapi", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        static extern uint rxdk_input_set_lightgun_calibration(IntPtr handle, ushort centerX, ushort centerY, ushort upperLeftX, ushort upperLeftY);
+
+        internal static uint MouseMask() { return rxdk_input_mouse_mask(); }
+        internal static IntPtr OpenMouse(uint port) { return rxdk_input_open_mouse(port); }
+        internal static uint GetMouse(IntPtr handle, ref MouseRaw state) { return rxdk_input_get_mouse(handle, ref state); }
+        internal static uint IrMask() { return rxdk_input_ir_mask(); }
+        internal static IntPtr OpenIr(uint port) { return rxdk_input_open_ir(port); }
+        internal static uint GetIr(IntPtr handle, ref IrRaw state) { return rxdk_input_get_ir(handle, ref state); }
+        internal static uint Subtype(IntPtr handle) { return rxdk_input_subtype(handle); }
+        internal static void SetLightgunCalibration(IntPtr handle, ushort centerX, ushort centerY, ushort upperLeftX, ushort upperLeftY)
+        {
+            rxdk_input_set_lightgun_calibration(handle, centerX, centerY, upperLeftX, upperLeftY);
+        }
     }
 }
