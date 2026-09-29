@@ -10,6 +10,7 @@ SRC="$ROOT/tests/managed/Test.cs"
 CORLIB="$OUT/mscorlib.dll"
 
 [ -f "$CORLIB" ] || { echo "ERROR: $CORLIB not found — build corlib first"; exit 1; }
+[ -f "$OUT/Rxdk.Input.dll" ] || { echo "ERROR: $OUT/Rxdk.Input.dll not found — run scripts/build-input.sh first"; exit 1; }
 
 # Minimal System.dll: SocketAddress (the native socket code loads "System.dll" by name) and a
 # UDP loopback helper whose methods are the real Socket icalls.
@@ -30,6 +31,7 @@ RSP="$OUT/testasm.rsp"
   echo "-out:$(cygpath -w "$OUT/Main.dll")"
   echo "-reference:$(cygpath -w "$CORLIB")"
   echo "-reference:$(cygpath -w "$OUT/System.dll")"
+  echo "-reference:$(cygpath -w "$OUT/Rxdk.Input.dll")"
   echo "$(cygpath -w "$SRC")"
   echo "$(cygpath -w "$ROOT/tests/managed/CompressionExtras.cs")"
   echo "$(cygpath -w "$ROOT/vendor/mono/mcs/class/System/System.IO.Compression/DeflateStream.cs")"

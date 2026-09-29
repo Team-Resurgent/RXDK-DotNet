@@ -37,9 +37,12 @@ per machine:
 | macOS Intel | `rxdk-managed-osx-x64.zip` |
 | macOS Apple Silicon | `rxdk-managed-osx-arm64.zip` |
 
-Each zip has `tools/` (`xbcp`, `xbset`, `xdvdfs`, `imagebld`, `xbox-launch`, …) and a .NET 8
-runtime installer (`install-dotnet-runtime.cmd` or `install-dotnet-runtime.sh`). Compiling C#
-uses the .NET SDK you already have; those tools are only for packing and for talking to a kit.
+Each zip has `tools/` (`xbcp`, `xbset`, `imagebld`, `xbox-launch`, …) and a .NET 8
+runtime installer (`install-dotnet-runtime.cmd` or `install-dotnet-runtime.sh`). `xdvdfs` is a
+separate download from
+[XDVDFS-TR](https://github.com/Team-Resurgent/XDVDFS-TR/releases/latest)
+(`xdvdfs-windows-x64`, `xdvdfs-windows-arm64`, `xdvdfs-linux-x64`, `xdvdfs-linux-arm64`,
+`xdvdfs-macos-x64`, `xdvdfs-macos-arm64`). Compiling C# uses the .NET SDK you already have.
 
 ## Compile an app
 
@@ -90,7 +93,7 @@ writable (`File.WriteAllText(@"T:\notes.txt", "...")`).
 
 ### xemu
 
-Replace `assemblies/Main.dll` inside the disc tree and pack a new ISO with `xdvdfs` from the tools zip:
+Replace `assemblies/Main.dll` inside the disc tree and pack a new ISO with `xdvdfs`:
 
 ```text
 RxdkMonoHost/
@@ -169,6 +172,7 @@ bash scripts/build-metadata.sh
 bash scripts/build-mini.sh
 bash scripts/build-corlib.sh
 bash scripts/build-syscore.sh
+bash scripts/build-input.sh
 bash scripts/build-testasm.sh
 bash scripts/build-minitests.sh
 bash scripts/build-host.sh

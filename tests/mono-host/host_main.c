@@ -249,6 +249,7 @@ void __cdecl main(void)
     /* Resolve the corlib P/Invokes into kernel32.dll (e.g. TimeZoneInfo -> GetTimeZoneInformation,
      * for DateTime.Now) to our linked-in implementations, since the Xbox has no dynamic loading. */
     { extern void rxdk_register_pinvoke_fallback(void); rxdk_register_pinvoke_fallback(); }
+    { extern void rxdk_register_selected_binds(void); rxdk_register_selected_binds(); }
 
     /* Verbose assembly-load tracing (env is disabled on Xbox, so set it programmatically) to see
      * exactly why corlib load fails. */

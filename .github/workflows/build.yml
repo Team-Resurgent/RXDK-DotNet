@@ -75,11 +75,25 @@ jobs:
           New-Item -ItemType Directory -Force -Path $toolsExtract | Out-Null
           curl.exe -fsSL -o $toolsZip https://github.com/Team-Resurgent/RXDK-Tools/releases/download/latest/rxdk-managed-win-x64.zip
           tar.exe -xf $toolsZip -C $toolsExtract
-          foreach ($name in 'imagebld.exe', 'xdvdfs.exe') {
-            $found = Get-ChildItem $toolsExtract -Recurse -Filter $name | Select-Object -First 1
-            if (-not $found) { throw "$name missing from the RXDK-Tools release" }
-            Copy-Item $found.FullName -Destination "$root\tools\$name" -Force
-          }
+          $imagebld = Get-ChildItem $toolsExtract -Recurse -Filter imagebld.exe | Select-Object -First 1
+          if (-not $imagebld) { throw 'imagebld.exe missing from the RXDK-Tools release' }
+          Copy-Item $imagebld.FullName -Destination "$root\tools\imagebld.exe" -Force
+
+          # xdvdfs is published by XDVDFS-TR, not RXDK-Tools. Asset names carry a commit suffix.
+          $xdvdfsMeta = Join-Path $env:RUNNER_TEMP 'xdvdfs-release.json'
+          curl.exe -fsSL -o $xdvdfsMeta https://api.github.com/repos/Team-Resurgent/XDVDFS-TR/releases/latest
+          $xdvdfsAsset = (Get-Content $xdvdfsMeta -Raw | ConvertFrom-Json).assets |
+            Where-Object { $_.name -like 'xdvdfs-windows-x64-*.zip' } |
+            Select-Object -First 1
+          if (-not $xdvdfsAsset) { throw 'xdvdfs-windows-x64 zip missing from the XDVDFS-TR release' }
+          $xdvdfsZip = Join-Path $env:RUNNER_TEMP 'xdvdfs.zip'
+          $xdvdfsExtract = Join-Path $env:RUNNER_TEMP 'xdvdfs'
+          New-Item -ItemType Directory -Force -Path $xdvdfsExtract | Out-Null
+          curl.exe -fsSL -o $xdvdfsZip $xdvdfsAsset.browser_download_url
+          tar.exe -xf $xdvdfsZip -C $xdvdfsExtract
+          $xdvdfs = Get-ChildItem $xdvdfsExtract -Recurse -Filter xdvdfs.exe | Select-Object -First 1
+          if (-not $xdvdfs) { throw 'xdvdfs.exe missing from the XDVDFS-TR zip' }
+          Copy-Item $xdvdfs.FullName -Destination "$root\tools\xdvdfs.exe" -Force
 
       - name: Build runtime, assemblies, and ISO
         shell: bash
@@ -91,19 +105,24 @@ jobs:
           bash scripts/build-mini.sh
           bash scripts/build-corlib.sh
           bash scripts/build-syscore.sh
+          bash scripts/build-input.sh
           bash scripts/build-testasm.sh
           bash scripts/build-minitests.sh
           bash scripts/build-host.sh
           for f in libeglib.lib libmonoutils.lib libmonoruntime.lib libmini.lib; do
             test -f "build-out/lib/$f"
           done
-          for f in mscorlib.dll System.dll System.Core.dll generics-variant-types.dll Main.dll; do
+          for f in mscorlib.dll System.dll System.Core.dll generics-variant-types.dll Rxdk.Input.dll Main.dll; do
             test -f "build-out/corlib/$f"
           done
           n=$(ls build-out/corlib/mini-*.dll | wc -l | tr -d '[:space:]')
           test "$n" = 15
           test -f build-out/obj/host/RxdkMonoHost.iso
           test -f build-out/obj/host/mono-host.xbe
+          if grep -q 'libd3d8' build-out/obj/host/sdk-extra-libs.txt; then
+            echo "stock host linked libd3d8"
+            exit 1
+          fi
 
       - name: ISA gate (PIII-clean)
         shell: pwsh
@@ -196,6 +215,6 @@ jobs:
 
             - `RxdkMonoHost.iso` — boot on xemu (`-dvd_path` this file, `-device lpc47m157 -serial stdio`)
             - `RxdkMonoHost.xbe` — the title image inside that ISO
-            - `rxdk-dotnet-runtime.zip` — `lib/` (libeglib, libmonoutils, libmonoruntime, libmini) and `assemblies/` (mscorlib, System, System.Core, and Main.dll)
+            - `rxdk-dotnet-runtime.zip` — `lib/` (libeglib, libmonoutils, libmonoruntime, libmini) and `assemblies/` (mscorlib, System, System.Core, Rxdk.Input, and Main.dll)
           files: |
             dist/*

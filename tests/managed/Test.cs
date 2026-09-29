@@ -333,6 +333,31 @@ public static class RxdkTest
         catch (DivideByZeroException) { return true; }
     }
 
+    // GamePad and Keyboard over libxapi. No controller is required: a missing pad reports
+    // disconnected, and an empty keyboard queue is a successful poll.
+    static bool T_Input()
+    {
+        bool range = false;
+        try { Rxdk.GamePad.Open(4); }
+        catch (ArgumentOutOfRangeException) { range = true; }
+        if (!range) return false;
+        uint mask = Rxdk.GamePad.ConnectedPorts;
+        using (Rxdk.GamePad pad = Rxdk.GamePad.Open(0))
+        {
+            bool expect = (mask & 1u) != 0;
+            if (pad.IsConnected != expect) return false;
+            Rxdk.GamePadState s = pad.GetState();
+            if (s.IsConnected != pad.IsConnected) return false;
+            if (pad.IsConnected) pad.SetVibration(0, 0);
+        }
+        using (Rxdk.Keyboard kb = Rxdk.Keyboard.Open())
+        {
+            Rxdk.Keystroke key;
+            kb.TryGetKeystroke(out key);
+        }
+        return true;
+    }
+
     // ---- runner -----------------------------------------------------------------------------
     // PASS/FAIL lines go via the raw RxdkConsole.Write sink; the Console test proves managed
     // System.Console.WriteLine also works (routes to the debug UART). Delegates work through the
@@ -362,6 +387,7 @@ public static class RxdkTest
         try { Check("DnsName",      T_DnsName()); }      catch (Exception e) { Exc("DnsName", e); }
         try { Check("DnsAddr",      T_DnsAddr()); }      catch (Exception e) { Exc("DnsAddr", e); }
         try { Check("DnsLookup",    T_DnsLookup()); }    catch (Exception e) { Exc("DnsLookup", e); }
+        try { Check("Input",        T_Input()); }        catch (Exception e) { Exc("Input", e); }
         // System.Console.WriteLine now WORKS (routes to the debug UART via the PAL console handle).
         // The fix: Environment.NewLine was returning null because icall-windows.c failed to compile
         // (shlobj.h), so its mono_icall_get_new_line was shadowed by a null-returning stub, NREing
