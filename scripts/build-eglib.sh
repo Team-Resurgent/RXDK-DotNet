@@ -27,17 +27,30 @@ FLAGS=(
 
 # Platform-neutral core + win32 backends. Excluded: *-unix/*-posix/*-aix, gclock-nanosleep,
 # gmodule* (dynamic loading — disabled on Xbox).
+#
+# gmisc-win32 and gunicode-win32 are excluded for good, not deferred: the console has
+# no GetLocaleInfoW/GetLocaleInfoEx and no GetACP/GetCPInfoExW. pal/src supplies
+# monoeg_g_win32_getlocale and monoeg_g_get_charset instead, and CultureInfo comes
+# from pal/src/locales.c.
 SRCS=(
   garray gbytearray gerror gfile ghashtable giconv glist gmarkup gmem goutput
   gpath gpattern gptrarray gqsort gqueue gshell gslist gspawn gstr gstring
   gunicode gutf8
-  gdate-win32 gdir-win32 gfile-win32 gmisc-win32 gtimer-win32 gunicode-win32
+  gdate-win32 gdir-win32 gfile-win32 gtimer-win32
 )
+
+# gdir-win32.c includes only winsock2.h, so HANDLE and INVALID_HANDLE_VALUE are not in
+# scope on this target. The APIs it wants do exist: pal/src/win32_file_shims.c provides
+# FindFirstFileW and FindNextFileW over the ANSI originals, and FindClose is an SDK
+# macro for CloseHandle.
+declare -A EXTRA_INCLUDE=( [gdir-win32]=windows.h )
 
 pass=0; fail=0; failed=()
 objs=()
 for s in "${SRCS[@]}"; do
-  if "$CLANG" "${FLAGS[@]}" "$EGLIB/$s.c" -o "$OUT/$s.o" 2> "$OUT/$s.err"; then
+  extra=()
+  [ -n "${EXTRA_INCLUDE[$s]:-}" ] && extra=(-include "${EXTRA_INCLUDE[$s]}")
+  if "$CLANG" "${FLAGS[@]}" "${extra[@]+"${extra[@]}"}" "$EGLIB/$s.c" -o "$OUT/$s.o" 2> "$OUT/$s.err"; then
     pass=$((pass+1)); objs+=("$OUT/$s.o")
   else
     fail=$((fail+1)); failed+=("$s")
@@ -46,14 +59,12 @@ done
 
 echo "eglib: $pass compiled, $fail failed"
 if [ "$fail" -gt 0 ]; then
-  echo "DEFERRED (win32 backends needing more Win32 header/CRT compat): ${failed[*]}"
   for s in "${failed[@]}"; do
-    echo "----- $s (first errors) -----"; grep -m3 'error:' "$OUT/$s.err"
+    echo "----- $s -----"; grep -m3 'error:' "$OUT/$s.err"
   done
+  exit 1
 fi
 
-# Archive whatever compiled — the core eglib is the milestone-1 deliverable; the deferred
-# win32 backends get folded in once the Win32 header-compat sub-task lands.
 if [ "$pass" -gt 0 ]; then
   OUTW=$(cygpath -w "$LIB/libeglib.lib")
   objsw=(); for o in "${objs[@]}"; do objsw+=("$(cygpath -w "$o")"); done

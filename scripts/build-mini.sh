@@ -53,6 +53,9 @@ for s in "${failed[@]}"; do cat "$OUT/$s.err"; done | grep -oE "fatal error: '[^
 echo "-- distinct FIRST non-header errors (top 30) --"
 for s in "${failed[@]}"; do grep -m1 'error:' "$OUT/$s.err" | grep -v 'file not found'; done | sed -E "s/^[^:]+:[0-9]+:[0-9]+: //" | sort | uniq -c | sort -rn | head -30
 echo "-- failed files ($fail) --"; echo "${failed[*]}"
+# A source that stops compiling is a broken archive, not a partial one. Fail here so a
+# release cannot be cut from an incomplete libmini.lib.
+if [ "$fail" -gt 0 ]; then exit 1; fi
 
 if [ "$pass" -gt 0 ]; then
   LIB="$ROOT/build-out/lib"; mkdir -p "$LIB"

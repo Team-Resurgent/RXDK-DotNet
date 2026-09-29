@@ -123,9 +123,7 @@ int mono_w32process_cleanup(void){return 0;}
 int mono_w32process_init(void){return 0;}
 int mono_w32process_signal_finished(void){return 0;}
 int mono_win32_handle_tls_callback_type(void){return 0;}
-int monoeg_g_dir_close(void){return 0;}
-int monoeg_g_dir_open(void){return 0;}
-int monoeg_g_dir_read_name(void){return 0;}
+/* g_dir_* are real now (eglib gdir-win32.c over the FindFirstFileW shims). */
 int monoeg_g_file_get_contents(void){return 0;}
 /* int monoeg_g_file_test(void){return 0;}  -- obsolete: real symbol now linked (JIT enabled) */
 int monoeg_g_get_current_dir(void){return 0;}

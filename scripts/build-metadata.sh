@@ -33,6 +33,11 @@ EXCLUDE="$EXCLUDE|coree|cominterop|marshal-windows|threadpool-io|threadpool-io-p
 # The WASM worker never starts a thread; it queues onto mono_threads_schedule_background_job,
 # which is a no-op here. Leave it out so threadpool-worker-default.c is the one that links.
 EXCLUDE="$EXCLUDE|threadpool-worker-wasm"
+# Memory-mapped files cannot be backed on this console: there is no CreateFileMapping,
+# MapViewOfFile, or NtCreateSection to build them on, and file-mmap-windows.c also wants
+# GetFileInformationByHandleEx/FILE_STANDARD_INFO. pal/src/mono_stubs.c supplies the
+# mono_mmap_* entry points, so MemoryMappedFile fails cleanly instead of not linking.
+EXCLUDE="$EXCLUDE|file-mmap-windows"
 # w32file-win32 IS compiled now: the SDK hardcodes WIN32_FIND_DATA->ANSI and ships no
 # WIN32_FIND_DATAW, so win32_supplement.h defines the wide struct and w32file.h/.c point their
 # find-data at WIN32_FIND_DATAW (xbox branch). The wide Win32 file APIs it calls (FindFirstFileW,
@@ -56,6 +61,7 @@ for s in "${failed[@]}"; do cat "$OUT/$s.err"; done | grep -oE "fatal error: '[^
 echo "-- distinct FIRST non-header errors (top 30) --"
 for s in "${failed[@]}"; do grep -m1 'error:' "$OUT/$s.err" | grep -v 'file not found'; done | sed -E "s/^[^:]+:[0-9]+:[0-9]+: //" | sort | uniq -c | sort -rn | head -30
 echo "-- failed files ($fail) --"; echo "${failed[*]}"
+if [ "$fail" -gt 0 ]; then exit 1; fi
 
 # Culture tables live outside mono/metadata. Compile them into this archive so a full metadata
 # rebuild keeps CultureInfo/RegionInfo. build-host.sh also links locales.o directly.
