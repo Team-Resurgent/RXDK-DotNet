@@ -1,7 +1,7 @@
 // Managed Xbox graphics over libd3d8 and libxgraphics. The device is the one
 // static NV2A device. Vertex buffers, index buffers, and textures are objects.
-// Open() walks Display.Defaults and takes the first mode the console supports.
-// Delete a line from that array to leave a mode out. The last line is the fallback.
+// Open() walks Display.Defaults and takes the first mode the console supports
+// that fits within Display.MaxWidth x Display.MaxHeight. The last line is the fallback.
 using System;
 using System.Runtime.InteropServices;
 
@@ -27,8 +27,13 @@ namespace Rxdk
 
     public static class Display
     {
-        // First supported entry wins. The last entry is used when nothing earlier
-        // matches. Delete a line to drop that mode (1920x1080 included).
+        // Set before the device opens to keep larger modes out, e.g. MaxHeight = 720
+        // for a title whose fill rate or memory cannot afford 1080i.
+        public static int MaxWidth = int.MaxValue;
+        public static int MaxHeight = int.MaxValue;
+
+        // First supported entry within the maximum wins. The last entry is used when
+        // nothing earlier matches.
         public static DisplayMode[] Defaults = new DisplayMode[] {
             new DisplayMode(1920, 1080, false, true, 60),
             new DisplayMode(1280, 720, true, true, 60),
@@ -303,7 +308,8 @@ namespace Rxdk
             int last = modes.Length - 1;
             for (int i = 0; i < last; i++)
             {
-                if (Display.Supports(modes[i], standard, flags))
+                if (modes[i].Width <= Display.MaxWidth && modes[i].Height <= Display.MaxHeight &&
+                    Display.Supports(modes[i], standard, flags))
                 {
                     chosen = i;
                     break;
@@ -795,6 +801,9 @@ namespace Rxdk
             [DllImport("d3d8", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_gfx_vertex_write")]
             public static extern void VertexWrite(IntPtr buffer, IntPtr src, int offset, int size);
 
+            [DllImport("d3d8", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_gfx_vertex_write_ex")]
+            public static extern void VertexWriteEx(IntPtr buffer, IntPtr src, int offset, int size, uint flags);
+
             [DllImport("d3d8", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true, EntryPoint = "rxdk_gfx_create_index_buffer")]
             public static extern IntPtr CreateIndexBuffer(int size);
 
@@ -882,9 +891,18 @@ namespace Rxdk
 
         public void SetData(IntPtr data, int offsetInBytes, int count)
         {
+            SetData(data, offsetInBytes, count, false);
+        }
+
+        /// <summary>
+        /// noOverwrite skips waiting for the GPU to finish with the buffer. Only pass it when the
+        /// range written is not used by any draw already submitted, as when appending to a ring.
+        /// </summary>
+        public void SetData(IntPtr data, int offsetInBytes, int count, bool noOverwrite)
+        {
             if (disposed)
                 throw new ObjectDisposedException("VertexBuffer");
-            GfxNative.VertexWrite(handle, data, offsetInBytes, count);
+            GfxNative.VertexWriteEx(handle, data, offsetInBytes, count, noOverwrite ? 0x20u : 0u);
         }
 
         public void Dispose()

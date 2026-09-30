@@ -40,3 +40,17 @@ if [ -z "${CSC:-}" ] || [ ! -f "$CSC" ]; then
   echo "ERROR: Roslyn csc.dll not found under /c/Program Files/dotnet/sdk" >&2
   exit 1
 fi
+
+# Mono's cil-stringreplacer and Microsoft's ilasm, for the class library builds. Built or fetched
+# on first use by build/tools/mono-build-tools.csproj.
+mono_build_tools() {
+  local proj="$ROOT/build/tools/mono-build-tools.csproj" out="$ROOT/build-out/tools/mono-build-tools"
+  STRINGREPLACER="$out/cil-stringreplacer.dll"
+  if [ ! -f "$STRINGREPLACER" ] || [ "$proj" -nt "$STRINGREPLACER" ]; then
+    dotnet build "$(cygpath -w "$proj")" -c Release -o "$(cygpath -w "$out")" -nologo -v:q > "$out.log" 2>&1 \
+      || { echo "ERROR: building $proj failed — $out.log" >&2; return 1; }
+  fi
+  ILASM="$(dotnet msbuild "$(cygpath -w "$proj")" -t:PrintILAsmPath -nologo -v:m | tail -n 1 | tr -d '\r' | sed 's/^ *//')"
+  ILASM="$(cygpath -u "$ILASM")"
+  [ -f "$ILASM" ] || { echo "ERROR: ilasm not found at $ILASM" >&2; return 1; }
+}

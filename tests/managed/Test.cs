@@ -156,12 +156,12 @@ public static class RxdkTest
     static bool T_Deflate() { return RoundTrip(false); }
     static bool T_Gzip() { return RoundTrip(true); }
     // Public UDP socket: echo to the title address, and 127.0.0.1 bind reports WSAEADDRNOTAVAIL.
-    static bool T_Udp() { return System.Net.Sockets.Socket.Loopback(); }
-    static bool T_UdpError() { return System.Net.Sockets.Socket.RejectsLoopback(); }
-    static bool T_Tcp() { return System.Net.Sockets.Socket.TcpEcho(); }
-    static bool T_DnsName() { return System.Net.Dns.HostName(); }
-    static bool T_DnsAddr() { return System.Net.Dns.ResolveNumeric(); }
-    static bool T_DnsLookup() { return System.Net.Dns.ResolveName(); }
+    static bool T_Udp() { return RxdkNet.UdpLoopback(); }
+    static bool T_UdpError() { return RxdkNet.RejectsLoopback(); }
+    static bool T_Tcp() { return RxdkNet.TcpEcho(); }
+    static bool T_DnsName() { return RxdkNet.HostName(); }
+    static bool T_DnsAddr() { return RxdkNet.ResolveNumeric(); }
+    static bool T_DnsLookup() { return RxdkNet.ResolveName(); }
     // Writes go to T:\ (the title's persistent HDD partition). D:\ is the DVD and is read-only.
     // File.WriteAllText/ReadAllText are corefx (FileStream under the hood). The FileStream test
     // writes a fixed count and reads that same count, so it does not depend on Length/GetFileSizeEx.
@@ -485,7 +485,6 @@ public static class RxdkTest
 
     static void Exc(string name, Exception e)
     {
-        RxdkConsole.Write("  EXC   " + name + ": " + e.GetType().Name + ": " + e.Message + "\n");
-        failed++;
+        RxdkConsole.Write("  EXC   " + name + ": " + e.GetType().Name + ": " + e.Message + "\n");        failed++;
     }
 }

@@ -27,6 +27,7 @@ echo "== compile PAL glue + host =="
 "$CLANG" "${CFLAGS[@]}" "$ROOT/pal/src/mono_stubs.c"       -o "$OUT/mono_stubs.o"       || exit 1
 "$CLANG" "${CFLAGS[@]}" "$ROOT/pal/src/win_cdecl_shims.c"  -o "$OUT/win_cdecl_shims.o"  || exit 1
 "$CLANG" "${CFLAGS[@]}" "$ROOT/pal/src/win32_file_shims.c" -o "$OUT/win32_file_shims.o" || exit 1
+"$CLANG" "${CFLAGS[@]}" -O2 "$ROOT/pal/src/sse1_memcpy.c"  -o "$OUT/sse1_memcpy.o"      || exit 1
 # Mono's culture tables (vendor/mono/mono/culture/locales.c). Not part of the metadata archive;
 # linked here so CultureInfo/RegionInfo/GetCultures resolve. The matching mono_stubs.c entries
 # must stay commented out or they shadow these symbols.
@@ -72,7 +73,11 @@ SFLAGS=(
 "$CLANG" "${CFLAGS[@]}" -DHAVE_SGEN_GC=1 -include "$PAL/rxdk/win32_supplement.h" \
   -Wno-implicit-function-declaration -Wno-int-conversion -Wno-incompatible-pointer-types \
   "$MONO/mono/metadata/sgen-mono.c" -o "$OUT/sgen-mono.o" || exit 1
-"$CLANG" "${CFLAGS[@]}" "$ROOT/tests/mono-host/host_main.c" -o "$OUT/host_main.o"        || exit 1
+# RXDK_EE=jit runs managed code on the x86 JIT instead of the interpreter.
+EEFLAGS=(); [ "${RXDK_EE:-interp}" = jit ] && EEFLAGS=(-DRXDK_JIT)
+# RXDK_PROFILE=1 adds a sampling profiler that dumps the main thread's EIPs to debug output.
+[ -n "${RXDK_PROFILE:-}" ] && EEFLAGS+=(-DRXDK_PROFILE)
+"$CLANG" "${CFLAGS[@]}" "${EEFLAGS[@]}" "$ROOT/tests/mono-host/host_main.c" -o "$OUT/host_main.o" || exit 1
 echo "   ok"
 
 # Selective SDK binds. A *.dll.libs sidecar next to an assembly names rxdk_bind_*_register
@@ -200,7 +205,7 @@ MSYS2_ARG_CONV_EXCL='*' "$CLANG" \
   "$(W "$OUT/host_main.o")" "$(W "$OUT/win32_supplement.o")" "$(W "$OUT/win_crt_compat.o")" "$(W "$OUT/win_cdecl_shims.o")" "$(W "$OUT/win32_file_shims.o")" "$(W "$OUT/locales.o")" \
   "$(W "$OUT/z_adler32.o")" "$(W "$OUT/z_crc32.o")" "$(W "$OUT/z_deflate.o")" "$(W "$OUT/z_inflate.o")" "$(W "$OUT/z_inftrees.o")" "$(W "$OUT/z_inffast.o")" "$(W "$OUT/z_trees.o")" "$(W "$OUT/z_zutil.o")" "$(W "$OUT/zlib-helper.o")" \
   "$(W "$OUT/w32socket.o")" "$(W "$OUT/w32socket-win32.o")" "$(W "$OUT/networking.o")" "$(W "$OUT/mono-poll.o")" "$(W "$OUT/xbox_net.o")" \
-  "$(W "$OUT/threadpool-worker-default.o")" "$(W "$OUT/sgen-mono.o")" "$(W "$OUT/bind_selected.o")" \
+  "$(W "$OUT/threadpool-worker-default.o")" "$(W "$OUT/sgen-mono.o")" "$(W "$OUT/bind_selected.o")" "$(W "$OUT/sse1_memcpy.o")" \
   "${UNDEF_ARGS[@]}" \
   -Wl,--start-group \
   "$(W "$LIB/libmini.lib")" "$(W "$LIB/libmonoruntime.lib")" "$(W "$LIB/libmonoutils.lib")" "$(W "$LIB/libeglib.lib")" \
@@ -211,7 +216,7 @@ MSYS2_ARG_CONV_EXCL='*' "$CLANG" \
   "$(W "$BUILTINS")" "$(W "$OUT/mono_stubs.o")" \
   -target i686-pc-windows-gnu -march=pentium3 -nostdlib -nostartfiles \
   -Wl,--image-base=0x10000 -fuse-ld=lld -e XapiTitleStartup \
-  -Wl,--error-limit=0 -Wl,--allow-multiple-definition \
+  -Wl,--error-limit=0 -Wl,--allow-multiple-definition -Wl,-Map="$(W "$OUT/mono-host.map")" \
   -o "$(W "$OUT/mono-host.exe")" 2> "$OUT/link.err"
 link_rc=$?
 echo "   link exit $link_rc"
@@ -236,10 +241,14 @@ if [ -f "$OUT/mono-host.exe" ]; then
   [ -f "$ROOT/build-out/corlib/Main.dll" ] && cp "$ROOT/build-out/corlib/Main.dll" "$OUT/iso/RxdkMonoHost/assemblies/Main.dll"
   # official Mono JIT regression tests (scripts/build-minitests.sh -> mini-*.dll), each its own assembly
   for d in "$ROOT"/build-out/corlib/mini-*.dll; do [ -f "$d" ] && cp "$d" "$OUT/iso/RxdkMonoHost/assemblies/"; done
-  # extra managed assemblies some mini tests reference (System.Core = Linq; generics-variant-types)
-  for d in System System.Core generics-variant-types; do
-    [ -f "$ROOT/build-out/corlib/$d.dll" ] && cp "$ROOT/build-out/corlib/$d.dll" "$OUT/iso/RxdkMonoHost/assemblies/"
-  done
+  # The class libraries (scripts/build-bcl.sh lists them), and the IL helper the generics test uses.
+  if [ -f "$ROOT/build-out/corlib/classlibs.txt" ]; then
+    while read -r d; do
+      d="${d%$'\r'}"
+      [ -f "$ROOT/build-out/corlib/$d" ] && cp "$ROOT/build-out/corlib/$d" "$OUT/iso/RxdkMonoHost/assemblies/"
+    done < "$ROOT/build-out/corlib/classlibs.txt"
+  fi
+  [ -f "$ROOT/build-out/corlib/generics-variant-types.dll" ] && cp "$ROOT/build-out/corlib/generics-variant-types.dll" "$OUT/iso/RxdkMonoHost/assemblies/"
   # Binding assemblies whose sidecar was on the link line. Absent here, their native lib stays out.
   for side in "$ROOT"/build-out/corlib/*.dll.libs; do
     [ -f "$side" ] || continue

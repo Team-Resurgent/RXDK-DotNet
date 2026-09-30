@@ -14,6 +14,7 @@ extern MonoAssembly *mono_assembly_open(const char *filename, int *status);
 extern MonoDomain *mono_jit_init(const char *file);
 /* Explicit runtime version avoids mono probing the (non-existent) root exe to auto-detect it. */
 extern MonoDomain *mono_jit_init_version(const char *root_domain_name, const char *runtime_version);
+extern void mono_domain_set_config(MonoDomain *domain, const char *base_dir, const char *config_file_name);
 /* Execution engine: we're interpreter-only (DISABLE_JIT, no AOT). MONO_AOT_MODE_INTERP_ONLY (8)
  * sets mono_use_interpreter=TRUE (so method "compilation" routes to the interp instead of the
  * asserting JIT stub) without requiring AOT. But it also leaves mono_aot_mode != NONE, which makes
@@ -23,7 +24,8 @@ extern MonoDomain *mono_jit_init_version(const char *root_domain_name, const cha
 enum { MONO_AOT_MODE_NONE = 0, MONO_AOT_MODE_INTERP_ONLY = 8 };
 extern void mono_jit_set_aot_mode(int mode);
 extern int  mono_aot_mode; /* MonoAotMode global in mini-runtime.c */
-
+extern int  mini_parse_debug_option(const char *option);
+extern void mono_gc_params_set(const char *options);
 /* Managed execution (invoke a method through the interpreter). */
 typedef struct _MonoClass  MonoClass;
 typedef struct _MonoMethod MonoMethod;
@@ -219,9 +221,75 @@ static void test_path(const char *p)
     OutputDebugStringA(a == 0xFFFFFFFF ? "  -> INVALID\n" : "  -> FOUND\n");
 }
 
+#ifdef RXDK_PROFILE
+/* Sampling profiler (build with RXDK_PROFILE=1). A time-critical thread wakes each millisecond.
+ * The timer interrupt that woke it preempted the main thread, leaving a trap frame (EIP, CS=8,
+ * EFLAGS with IF) just above that thread's KernelStack, so the interrupted EIP can be read there.
+ * After a delay it samples for a while, then prints every sample for offline symbolization. */
+#define RXDK_PROF_SAMPLES 8000
+static PKTHREAD rxdk_prof_main;
+static unsigned int rxdk_prof_ips[RXDK_PROF_SAMPLES];
+static unsigned char rxdk_prof_depth[RXDK_PROF_SAMPLES];
+static unsigned int rxdk_prof_callers[RXDK_PROF_SAMPLES];
+
+/* Returns the EIP and stores the frame's word offset in *depth; a real preemption always has
+ * the same offset, so other offsets are stack words that merely look like a trap frame. The
+ * trap frame saves EBP two words below EIP, which gives the interrupted function's caller. */
+static unsigned int rxdk_prof_sample(unsigned char *depth, unsigned int *caller)
+{
+    unsigned int *sp = (unsigned int *)rxdk_prof_main->KernelStack, i, ebp;
+    for (i = 2; i < 96; i++)
+        if (sp[i + 1] == 8 && (sp[i + 2] & 0x202) == 0x202 && sp[i + 2] < 0x400000) {
+            *depth = (unsigned char)i;
+            ebp = sp[i - 2];
+            *caller = (ebp > (unsigned int)sp && ebp < (unsigned int)sp + 0x100000) ? ((unsigned int *)ebp)[1] : 0;
+            return sp[i];
+        }
+    *depth = 0xff;
+    return 1; /* no trap frame: the main thread was waiting, not running */
+}
+
+static DWORD WINAPI rxdk_prof_thread(LPVOID arg)
+{
+    int n = 0, i;
+    char line[24];
+    (void)arg;
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+    Sleep(30000);
+    OutputDebugStringA("PROF start\n");
+    while (n < RXDK_PROF_SAMPLES) {
+        Sleep(1);
+        rxdk_prof_callers[n] = 0;
+        rxdk_prof_ips[n] = rxdk_prof_sample(&rxdk_prof_depth[n], &rxdk_prof_callers[n]);
+        n++;
+    }
+    for (i = 0; i < n; i++) {
+        static const char hex[] = "0123456789abcdef";
+        unsigned int v = rxdk_prof_ips[i];
+        int k;
+        line[0] = 'P'; line[1] = ' ';
+        for (k = 0; k < 8; k++) line[2 + k] = hex[(v >> (28 - 4 * k)) & 15];
+        line[10] = ' ';
+        line[11] = hex[rxdk_prof_depth[i] >> 4];
+        line[12] = hex[rxdk_prof_depth[i] & 15];
+        line[13] = ' ';
+        v = rxdk_prof_callers[i];
+        for (k = 0; k < 8; k++) line[14 + k] = hex[(v >> (28 - 4 * k)) & 15];
+        line[22] = '\n'; line[23] = 0;
+        OutputDebugStringA(line);
+    }
+    OutputDebugStringA("PROF end\n");
+    return 0;
+}
+#endif
+
 void __cdecl main(void)
 {
     MonoDomain *domain;
+#ifdef RXDK_PROFILE
+    __asm__ volatile ("movl %%fs:0x28, %0" : "=r"(rxdk_prof_main)); /* KPCR.Prcb.CurrentThread */
+    CreateThread(NULL, 0, rxdk_prof_thread, NULL, 0, NULL);
+#endif
     OutputDebugStringA("RXDK-DotNet: mono host starting\n");
 
     /* D: is already the title drive (DVD when booted from disc; the title's dir from HDD) — don't
@@ -267,8 +335,18 @@ void __cdecl main(void)
     mono_trace_set_level_string("debug");
     mono_trace_set_mask_string("asm");
 
+    /* The default 4 MB nursery is committed up front, which a 64 MB console cannot spare. */
+    mono_gc_params_set("nursery-size=1m");
+
+#ifdef RXDK_JIT
+    /* The Xbox has no vectored exception handlers, so a fault in JIT code cannot become a
+     * NullReferenceException. Have the JIT test for null before each dereference instead. */
+    mini_parse_debug_option("explicit-null-checks");
+    OutputDebugStringA("RXDK-DotNet: execution engine = JIT\n");
+#else
     mono_jit_set_aot_mode(MONO_AOT_MODE_INTERP_ONLY); /* enable interpreter EE */
     mono_aot_mode = MONO_AOT_MODE_NONE;               /* ...but keep the AOT loader disabled */
+#endif
 
     OutputDebugStringA("RXDK-DotNet: calling mono_jit_init_version (loads corlib)\n");
     domain = mono_jit_init_version("rxdk-dotnet", "v4.0.30319");
@@ -276,6 +354,9 @@ void __cdecl main(void)
                               : "RXDK-DotNet: mono_jit_init returned NULL\n");
 
     if (domain) {
+        /* AppDomain.BaseDirectory, which a desktop title sees as its exe's folder with Content/
+         * beside it. That is the disc root here: default.xbe and Content\ sit in D:\. */
+        mono_domain_set_config(domain, "D:\\", "D:\\default.xbe.config");
         rxdk_run_managed();
         rxdk_run_all_minitests();
     }

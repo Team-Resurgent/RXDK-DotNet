@@ -191,21 +191,29 @@ WSAIoctl (unsigned int s, unsigned long code, void *inbuf, unsigned long inlen,
 	return SOCKET_ERROR;
 }
 
+/* Waits up to 3 s for XNet to finish acquiring an address. */
+static DWORD
+title_xnaddr (XNADDR *xn)
+{
+	unsigned long start;
+	DWORD st;
+	memset (xn, 0, sizeof (*xn));
+	start = KeTickCount;
+	do {
+		st = XNetGetTitleXnAddr (xn);
+		if (st != XNET_GET_XNADDR_PENDING && st != XNET_GET_XNADDR_NONE)
+			break;
+		Sleep (10);
+	} while ((KeTickCount - start) < 3000);
+	return st;
+}
+
 /* Network-order IPv4 of this title, or 0 if XNet has no address yet. */
 unsigned int
 rxdk_title_ipv4 (void)
 {
 	XNADDR xn;
-	unsigned long start;
-	DWORD st;
-	memset (&xn, 0, sizeof (xn));
-	start = KeTickCount;
-	do {
-		st = XNetGetTitleXnAddr (&xn);
-		if (st != XNET_GET_XNADDR_PENDING && st != XNET_GET_XNADDR_NONE)
-			break;
-		Sleep (10);
-	} while ((KeTickCount - start) < 3000);
+	DWORD st = title_xnaddr (&xn);
 	{
 		char line[80];
 		unsigned long a = ntohl (xn.ina.s_addr);
@@ -215,6 +223,173 @@ rxdk_title_ipv4 (void)
 		OutputDebugStringA (line);
 	}
 	return xn.ina.s_addr;
+}
+
+/* iphlpapi for System.Net.NetworkInformation's Win32 backend, which Socket.OSSupportsIPv4 asks.
+ * The structs follow the managed declarations in Win32NetworkInterfaceMarshal.cs field for field,
+ * since Mono marshals them with this compiler's alignment. The one adapter is the Ethernet port
+ * with XNet's IPv4 address; IPv6 has no interface index. */
+#define RXDK_IF_INDEX 1
+#define RXDK_ERROR_NOT_FOUND 1168
+#define RXDK_ERROR_BUFFER_OVERFLOW 111
+#define RXDK_ERROR_NO_DATA 232
+
+typedef struct { unsigned int Length, Flags; } RxdkLengthFlags;
+typedef struct { void *Sockaddr; int SockaddrLength; } RxdkSocketAddress;
+
+typedef struct {
+	RxdkLengthFlags LengthFlags;
+	void *Next;
+	RxdkSocketAddress Address;
+	int PrefixOrigin, SuffixOrigin, DadState;
+	unsigned int ValidLifetime, PreferredLifetime, LeaseLifetime;
+	unsigned char OnLinkPrefixLength;
+} RxdkUnicastAddress;
+
+typedef struct {
+	union { unsigned long long Alignment; struct { int Length; int IfIndex; } s; } Alignment;
+	void *Next;
+	char *AdapterName;
+	void *FirstUnicastAddress, *FirstAnycastAddress, *FirstMulticastAddress, *FirstDnsServerAddress;
+	unsigned short *DnsSuffix, *Description, *FriendlyName;
+	unsigned char PhysicalAddress[8];
+	unsigned int PhysicalAddressLength, Flags, Mtu;
+	int IfType, OperStatus, Ipv6IfIndex;
+	unsigned int ZoneIndices[16];
+	void *FirstPrefix;
+	unsigned long long TransmitLinkSpeed, ReceiveLinkSpeed;
+	void *FirstWinsServerAddress, *FirstGatewayAddress;
+	unsigned int Ipv4Metric, Ipv6Metric;
+	unsigned long long Luid;
+	RxdkSocketAddress Dhcpv4Server;
+	unsigned int CompartmentId;
+	unsigned long long NetworkGuid;
+	int ConnectionType, TunnelType;
+	RxdkSocketAddress Dhcpv6Server;
+	unsigned char Dhcpv6ClientDuid[130];
+	unsigned long long Dhcpv6ClientDuidLength, Dhcpv6Iaid;
+	void *FirstDnsSuffix;
+} RxdkAdapterAddresses;
+
+typedef struct {
+	unsigned short Name[256];
+	int Index, Type, Mtu;
+	unsigned int Speed;
+	int PhysAddrLen;
+	unsigned char PhysAddr[8];
+	unsigned int AdminStatus, OperStatus, LastChange;
+	int Counters[12];
+	int DescrLen;
+	unsigned char Descr[256];
+} RxdkIfRow;
+
+typedef struct {
+	RxdkAdapterAddresses adapter;
+	RxdkUnicastAddress unicast;
+	struct sockaddr_in sin;
+	unsigned short suffix[1], name[9];
+	char id[5];
+} RxdkAdapterBlock;
+
+static const char rxdk_if_name[] = "Ethernet";
+
+static unsigned int
+rxdk_link_speed (void)
+{
+	DWORD link = XNetGetEthernetLinkStatus ();
+	return (link & XNET_ETHERNET_LINK_100MBPS) ? 100000000u : (link & XNET_ETHERNET_LINK_10MBPS) ? 10000000u : 0u;
+}
+
+/* SetLastError imports are called cdecl in this build. */
+int
+rxdk_GetAdaptersAddresses (unsigned int family, unsigned int flags, void *reserved, void *info, int *size)
+{
+	RxdkAdapterBlock *b = (RxdkAdapterBlock *)info;
+	XNADDR xn;
+	DWORD st;
+	int i;
+	(void)flags; (void)reserved;
+	if (!size)
+		return 87; /* ERROR_INVALID_PARAMETER */
+	if (family != AF_UNSPEC && family != AF_INET)
+		return RXDK_ERROR_NO_DATA;
+	if (!b || *size < (int)sizeof (*b)) {
+		*size = sizeof (*b);
+		return RXDK_ERROR_BUFFER_OVERFLOW;
+	}
+	st = title_xnaddr (&xn);
+	if (st == XNET_GET_XNADDR_PENDING || st == XNET_GET_XNADDR_NONE)
+		return RXDK_ERROR_NO_DATA;
+	memset (b, 0, sizeof (*b));
+
+	b->sin.sin_family = AF_INET;
+	b->sin.sin_addr = xn.ina;
+	b->unicast.LengthFlags.Length = sizeof (b->unicast);
+	b->unicast.Address.Sockaddr = &b->sin;
+	b->unicast.Address.SockaddrLength = sizeof (b->sin);
+	b->unicast.PrefixOrigin = (st & XNET_GET_XNADDR_DHCP) ? 3 : 1; /* Dhcp : Manual */
+	b->unicast.SuffixOrigin = (st & XNET_GET_XNADDR_DHCP) ? 3 : 1;
+	b->unicast.DadState = 4; /* Preferred */
+	b->unicast.ValidLifetime = b->unicast.PreferredLifetime = b->unicast.LeaseLifetime = 0xFFFFFFFFu;
+
+	for (i = 0; rxdk_if_name[i]; i++)
+		b->name[i] = (unsigned short)rxdk_if_name[i];
+	b->id[0] = 'x'; b->id[1] = 'n'; b->id[2] = 'e'; b->id[3] = 't';
+
+	b->adapter.Alignment.s.Length = sizeof (b->adapter);
+	b->adapter.Alignment.s.IfIndex = RXDK_IF_INDEX;
+	b->adapter.AdapterName = b->id;
+	b->adapter.FirstUnicastAddress = &b->unicast;
+	b->adapter.DnsSuffix = b->suffix;
+	b->adapter.Description = b->name;
+	b->adapter.FriendlyName = b->name;
+	memcpy (b->adapter.PhysicalAddress, xn.abEnet, 6);
+	b->adapter.PhysicalAddressLength = 6;
+	b->adapter.Flags = (st & XNET_GET_XNADDR_DHCP) ? 4 : 0; /* IP_ADAPTER_DHCP_ENABLED */
+	b->adapter.Mtu = 1500;
+	b->adapter.IfType = 6; /* Ethernet */
+	b->adapter.OperStatus = (XNetGetEthernetLinkStatus () & XNET_ETHERNET_LINK_ACTIVE) ? 1 : 2; /* Up : Down */
+	b->adapter.TransmitLinkSpeed = b->adapter.ReceiveLinkSpeed = rxdk_link_speed ();
+	return 0;
+}
+
+int
+rxdk_GetIfEntry (RxdkIfRow *row)
+{
+	XNADDR xn;
+	int i;
+	if (!row)
+		return 87;
+	if (row->Index != RXDK_IF_INDEX)
+		return RXDK_ERROR_NOT_FOUND;
+	title_xnaddr (&xn);
+	memset (row, 0, sizeof (*row));
+	for (i = 0; rxdk_if_name[i]; i++) {
+		row->Name[i] = (unsigned short)rxdk_if_name[i];
+		row->Descr[i] = (unsigned char)rxdk_if_name[i];
+	}
+	row->DescrLen = i;
+	row->Index = RXDK_IF_INDEX;
+	row->Type = 6;
+	row->Mtu = 1500;
+	row->Speed = rxdk_link_speed ();
+	row->PhysAddrLen = 6;
+	memcpy (row->PhysAddr, xn.abEnet, 6);
+	row->AdminStatus = 1;
+	row->OperStatus = (XNetGetEthernetLinkStatus () & XNET_ETHERNET_LINK_ACTIVE) ? 5 : 2; /* Operational : Disconnected */
+	return 0;
+}
+
+/* No SetLastError, so stdcall. Every address leaves through the one adapter. */
+unsigned int __attribute__((__stdcall__))
+rxdk_GetBestInterfaceEx (const unsigned char *sockaddr, int *index)
+{
+	if (!sockaddr || !index)
+		return 87;
+	if (*(const unsigned short *)sockaddr != AF_INET)
+		return RXDK_ERROR_NOT_FOUND;
+	*index = RXDK_IF_INDEX;
+	return 0;
 }
 
 int

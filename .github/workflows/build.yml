@@ -36,12 +36,14 @@ jobs:
         with:
           submodules: true
 
-      - name: Init corlib source submodules
+      - name: Init class library source submodules
         shell: bash
         run: |
           set -euo pipefail
           git -C vendor/mono submodule update --init --depth 1 \
-            external/corefx external/corert
+            external/corefx external/corert external/binary-reference-assemblies
+          git -C vendor/monogame submodule update --init --depth 1 \
+            ThirdParty/StbImageSharp ThirdParty/StbImageWriteSharp
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -107,20 +109,20 @@ jobs:
           bash scripts/build-metadata.sh
           bash scripts/build-mini.sh
           bash scripts/build-corlib.sh
-          bash scripts/build-syscore.sh
           bash scripts/build-bcl.sh
           bash scripts/build-input.sh
           bash scripts/build-kernel.sh
           bash scripts/build-graphics.sh
           bash scripts/build-sdklibs.sh
           bash scripts/build-monogame.sh
+          bash scripts/build-gum.sh
           bash scripts/build-testasm.sh
           bash scripts/build-minitests.sh
           bash scripts/build-host.sh
           for f in libeglib.lib libmonoutils.lib libmonoruntime.lib libmini.lib; do
             test -f "build-out/lib/$f"
           done
-          for f in mscorlib.dll System.dll System.Core.dll System.Numerics.Vectors.dll System.Runtime.Serialization.dll MonoGame.Framework.dll generics-variant-types.dll Rxdk.Input.dll Rxdk.Kernel.dll Rxdk.Graphics.dll Rxdk.Audio.dll Rxdk.Music.dll Rxdk.Xact.dll Rxdk.Video.dll Rxdk.Uix.dll Rxdk.Online.dll Rxdk.Voice.dll Main.dll; do
+          for f in mscorlib.dll System.dll System.Core.dll System.Numerics.Vectors.dll System.Runtime.Serialization.dll System.Drawing.Primitives.dll System.Net.Http.dll MonoGame.Framework.dll FlatRedBall.InterpolationCore.dll GumCommon.dll MonoGameGum.dll generics-variant-types.dll Rxdk.Input.dll Rxdk.Kernel.dll Rxdk.Graphics.dll Rxdk.Audio.dll Rxdk.Music.dll Rxdk.Xact.dll Rxdk.Video.dll Rxdk.Uix.dll Rxdk.Online.dll Rxdk.Voice.dll Main.dll; do
             test -f "build-out/corlib/$f"
           done
           n=$(ls build-out/corlib/mini-*.dll | wc -l | tr -d '[:space:]')

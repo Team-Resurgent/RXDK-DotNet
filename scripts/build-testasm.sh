@@ -14,9 +14,7 @@ CORLIB="$OUT/mscorlib.dll"
 [ -f "$OUT/Rxdk.Kernel.dll" ] || { echo "ERROR: $OUT/Rxdk.Kernel.dll not found — run scripts/build-kernel.sh first"; exit 1; }
 [ -f "$OUT/Rxdk.Graphics.dll" ] || { echo "ERROR: $OUT/Rxdk.Graphics.dll not found — run scripts/build-graphics.sh first"; exit 1; }
 
-# System.dll holds SocketAddress (the native socket code loads "System.dll" by name), the UDP
-# loopback helper whose methods are the real Socket icalls, and — since build-bcl.sh took it over —
-# Stopwatch, Uri, and Regex. Building it here too would overwrite the full one with the stub.
+# Sockets, Dns, and DeflateStream/GZipStream are System.dll's own, built by build-bcl.sh.
 SYS="$OUT/System.dll"
 [ -f "$SYS" ] || { echo "ERROR: $SYS not found — run scripts/build-bcl.sh first"; exit 1; }
 echo "System.dll: $(stat -c%s "$SYS" 2>/dev/null) bytes"
@@ -37,8 +35,7 @@ RSP="$OUT/testasm.rsp"
   echo "-resource:$(cygpath -w "$ROOT/tests/managed/hello.txt"),Rxdk.Hello.txt"
   echo "$(cygpath -w "$SRC")"
   echo "$(cygpath -w "$ROOT/tests/managed/Triangle.cs")"
-  echo "$(cygpath -w "$ROOT/tests/managed/CompressionExtras.cs")"
-  echo "$(cygpath -w "$ROOT/vendor/mono/mcs/class/System/System.IO.Compression/DeflateStream.cs")"
+  echo "$(cygpath -w "$ROOT/tests/managed/Net.cs")"
 } > "$RSP"
 
 echo "== compiling Main.dll with Roslyn =="

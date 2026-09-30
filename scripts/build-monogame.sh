@@ -19,6 +19,10 @@ CORLIB="$OUT/mscorlib.dll"
 
 [ -d "$MG" ] || { echo "ERROR: vendor/monogame not checked out — git submodule update --init vendor/monogame"; exit 1; }
 [ -f "$CORLIB" ] || { echo "ERROR: $CORLIB not found — build corlib first"; exit 1; }
+STB="$ROOT/vendor/monogame/ThirdParty"
+for s in StbImageSharp StbImageWriteSharp; do
+  [ -d "$STB/$s/src" ] || { echo "ERROR: $s missing — git -C vendor/monogame submodule update --init ThirdParty/$s"; exit 1; }
+done
 
 # Directories that are never part of an Xbox build:
 #   Platform/                 per-platform code; ours is listed explicitly below
@@ -56,6 +60,9 @@ UPSTREAM=(
   "Platform/Threading.cs"
   "Platform/Utilities/AssemblyHelper.cs"
   "Platform/Utilities/ReflectionHelpers.Default.cs"
+  # Texture2D.FromStream and SaveAsPng/SaveAsJpeg over StbImageSharp, as on DesktopGL. The decoder
+  # itself is the ThirdParty submodules, added below.
+  "Platform/Graphics/Texture2D.StbSharp.cs"
 )
 
 # Ours. Files that do not exist yet are skipped, so this script stays runnable through the whole
@@ -115,7 +122,8 @@ RSP="$OUT/monogame.rsp"
   echo "-reference:$(cygpath -w "$CORLIB")"
   echo "-reference:$(cygpath -w "$OUT/System.dll")"
   echo "-reference:$(cygpath -w "$OUT/System.Core.dll")"
-  for r in System.Numerics.Vectors System.Runtime.Serialization; do
+  # System.Numerics.Vectors only forwards Vector2, Matrix4x4, and the rest to System.Numerics.
+  for r in System.Numerics System.Numerics.Vectors System.Runtime.Serialization; do
     [ -f "$OUT/$r.dll" ] || { echo "ERROR: $OUT/$r.dll missing — run scripts/build-bcl.sh first" >&2; exit 1; }
     echo "-reference:$(cygpath -w "$OUT/$r.dll")"
   done
@@ -130,7 +138,8 @@ RSP="$OUT/monogame.rsp"
   # NET45 is not a guess: MonoGame uses it to pick the .NET Framework 4.5 spellings of the
   # reflection and Enum APIs, and our corlib is mono's net_4_x profile, so those are the ones we
   # have. Without it the framework calls Enum.GetValues<T>() and TypeInfo members from .NET 5.
-  echo "-define:XBOX;NET45"
+  # STBSHARP_INTERNAL keeps StbImageSharp's types internal, as DesktopGL builds it.
+  echo "-define:XBOX;NET45;STBSHARP_INTERNAL"
   # Doc comments, unused fields, obsolete members, and unreachable code are upstream's business.
   echo "-nowarn:0169,0649,0067,0219,0414,1591,0618,0612,0162,0108,0114,0067,1685,0693"
   # Resource names must match the constants in Platform/Xbox/Graphics/Effect/EffectResource.Xbox.cs.
@@ -138,6 +147,8 @@ RSP="$OUT/monogame.rsp"
     echo "-resource:$(cygpath -w "$e"),Microsoft.Xna.Framework.Platform.Xbox.Graphics.Effect.Resources.$(basename "$e")"
   done
   while read -r f; do cygpath -w "$f"; done < "$CORE"
+  find "$STB/StbImageSharp/src" "$STB/StbImageWriteSharp/src" -name '*.cs' -type f | sort \
+    | while read -r f; do cygpath -w "$f"; done
   for p in "${UPSTREAM[@]}" "${PLATFORM[@]}"; do
     [ -f "$MG/$p" ] && cygpath -w "$MG/$p"
   done

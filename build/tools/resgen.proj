@@ -1,0 +1,9 @@
+<Project>
+
+  <!-- Compiles one .resx to a .resources file, the job Mono's Makefiles give resgen.exe
+       (RESOURCE_DEFS). dotnet msbuild resgen.proj -p:Resx=in.resx -p:Resources=out.resources -->
+  <Target Name="Build">
+    <GenerateResource Sources="$(Resx)" OutputResources="$(Resources)" ExecuteAsTool="false" />
+  </Target>
+
+</Project>

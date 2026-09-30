@@ -14,6 +14,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+void *sse1_memcpy_nt(void *dst, const void *src, size_t n); /* pal/src/sse1_memcpy.c */
+
 typedef struct {
     unsigned int BackBufferWidth;
     unsigned int BackBufferHeight;
@@ -240,6 +242,12 @@ static int rxdk_gfx_open(int width, int height, int progressive, int widescreen,
         return (int)hr;
     d3d_device = device;
     device_open = 1;
+    /* The front and back buffers start as whatever was in memory, and the front one is
+       scanned out until the title's first frame, so blank both. */
+    for (int i = 0; i < 2; i++) {
+        D3DDevice_Clear(0, NULL, 0x7 /* target | zbuffer | stencil */, 0xFF000000, 1.0f, 0);
+        D3DDevice_Swap(0);
+    }
     return 0;
 }
 
@@ -433,14 +441,22 @@ static void rxdk_gfx_swizzle(const unsigned char *src, unsigned char *dst, int w
     }
 }
 
-static void rxdk_gfx_vertex_write(void *buffer, const void *src, int offset, int size)
+/* flags 0 waits for the GPU to stop reading the buffer. D3DLOCK_NOOVERWRITE (0x20) does not wait,
+ * for a caller that only writes a range no pending draw uses. */
+static void rxdk_gfx_vertex_write_ex(void *buffer, const void *src, int offset, int size, unsigned int flags)
 {
     unsigned char *dst;
     if (!buffer || !src || size <= 0)
         return;
-    dst = D3DVertexBuffer_Lock2(buffer, 0);
-    memcpy(dst + offset, src, (size_t)size);
+    dst = D3DVertexBuffer_Lock2(buffer, flags);
+    /* The CPU never reads vertex data back, so stream it past the cache. */
+    sse1_memcpy_nt(dst + offset, src, (size_t)size);
     rxdk_gfx_sfence();
+}
+
+static void rxdk_gfx_vertex_write(void *buffer, const void *src, int offset, int size)
+{
+    rxdk_gfx_vertex_write_ex(buffer, src, offset, size, 0);
 }
 
 static void *rxdk_gfx_create_index_buffer(int size)
@@ -949,6 +965,7 @@ static void *d3d_symbol(void *handle, const char *name, char **err, void *ud)
     if (!strcmp(name, "rxdk_gfx_block_until_idle")) return (void *)&rxdk_gfx_block_until_idle;
     if (!strcmp(name, "rxdk_gfx_create_vertex_buffer")) return (void *)&rxdk_gfx_create_vertex_buffer;
     if (!strcmp(name, "rxdk_gfx_vertex_write")) return (void *)&rxdk_gfx_vertex_write;
+    if (!strcmp(name, "rxdk_gfx_vertex_write_ex")) return (void *)&rxdk_gfx_vertex_write_ex;
     if (!strcmp(name, "rxdk_gfx_create_index_buffer")) return (void *)&rxdk_gfx_create_index_buffer;
     if (!strcmp(name, "rxdk_gfx_index_write")) return (void *)&rxdk_gfx_index_write;
     if (!strcmp(name, "rxdk_gfx_create_texture")) return (void *)&rxdk_gfx_create_texture;

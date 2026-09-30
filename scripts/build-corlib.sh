@@ -56,9 +56,12 @@ expand "$OUT/all.txt"  | sort -u > "$OUT/paths.txt"
 expand "$OUT/excl.txt" | sort -u > "$OUT/exclpaths.txt"
 # Files of ours that stand in for a mono/corefx source, matched on basename. corefx's
 # OperatingSystem is the netstandard-era class with none of the IsWindows/IsIOS/... platform checks
-# .NET 5 added, which any library written since then calls; see the replacement for the rest.
-comm -23 "$OUT/paths.txt" "$OUT/exclpaths.txt" | grep -vE '\\OperatingSystem\.cs$' >> "$RSP"
+# .NET 5 added, which any library written since then calls; corefx's Random predates .NET 6's
+# Random.Shared. See each replacement for the rest. IsExternalInit is an addition, not a stand-in.
+comm -23 "$OUT/paths.txt" "$OUT/exclpaths.txt" | grep -vE '\\(OperatingSystem|Random)\.cs$' >> "$RSP"
 cygpath -w "$ROOT/build/managed/corlib-operatingsystem.cs" >> "$RSP"
+cygpath -w "$ROOT/build/managed/corlib-random.cs" >> "$RSP"
+cygpath -w "$ROOT/build/managed/corlib-isexternalinit.cs" >> "$RSP"
 echo "sources: $(grep -c '\.cs"\?$' "$RSP" | tr -d ' ') files"
 
 echo "== compiling mscorlib.dll with Roslyn =="
@@ -70,5 +73,25 @@ echo "-- top error categories --"
 grep -oE 'error CS[0-9]+' "$OUT/build.log" | sort | uniq -c | sort -rn | head -15
 echo "-- sample errors --"
 grep -E ': error CS' "$OUT/build.log" | head -8
-[ -f "$OUT/mscorlib.dll" ] && echo "PRODUCED mscorlib.dll ($(stat -c%s "$OUT/mscorlib.dll") bytes)"
-exit $rc
+[ $rc -eq 0 ] || exit $rc
+
+# What mcs/class/corlib/Makefile runs on the compiled assembly: assemble the Unsafe bodies
+# (il/il.make), then cil-stringreplacer with RESOURCE_STRINGS, IL_REPLACE, and --mscorlib-debug.
+# That renames the internal System.Diagnostics.Debug to DebugPrivate, so System.dll's public Debug
+# is the only one, and replaces resource-key lookups with the message text.
+echo "== post-processing mscorlib.dll =="
+mono_build_tools || exit 1
+UNSAFE_TMP="$OUT/corlib.unsafe.dll.tmp"
+MSYS2_ARG_CONV_EXCL='*' "$ILASM" "$(cygpath -w "$CORLIB/System.Runtime.CompilerServices/Unsafe.il")" \
+  -dll -noautoinherit -quiet "-output=$(cygpath -w "$UNSAFE_TMP")" > "$OUT/ilasm.log" 2>&1 \
+  || { echo "ERROR: ilasm failed — $OUT/ilasm.log"; exit 1; }
+# A virus scanner can hold the just-written DLL open for a moment, so retry the rewrite.
+for try in 1 2 3 4 5; do
+  MSYS2_ARG_CONV_EXCL='*' dotnet "$(cygpath -w "$STRINGREPLACER")" --mscorlib-debug \
+    "--resourcestrings:$(cygpath -w "$CORLIB/../referencesource/mscorlib/mscorlib.txt")" \
+    "--ilreplace:$(cygpath -w "$UNSAFE_TMP")" "$(cygpath -w "$OUT/mscorlib.dll")" > "$OUT/stringreplacer.log" 2>&1 && break
+  grep -q 'being used by another process' "$OUT/stringreplacer.log" || try=5
+  [ $try -eq 5 ] && { echo "ERROR: cil-stringreplacer failed — $OUT/stringreplacer.log"; exit 1; }
+  sleep 2
+done
+echo "PRODUCED mscorlib.dll ($(stat -c%s "$OUT/mscorlib.dll") bytes)"

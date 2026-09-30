@@ -51,12 +51,10 @@ int mono_free_bstr(void){return 0;}
 int mono_get_module_file_name(void){return 0;}
 int mono_get_module_filename(void){return 0;}
 int mono_load_coree(void){return 0;}
-int mono_marshal_alloc_co_task_mem(void){return 0;}
+/* mono_marshal_*_co_task_mem are win32_supplement.c. */
 int mono_marshal_alloc_hglobal(void){return 0;}
 int mono_marshal_free_ccw(void){return 0;}
-int mono_marshal_free_co_task_mem(void){return 0;}
 int mono_marshal_free_hglobal(void){return 0;}
-int mono_marshal_realloc_co_task_mem(void){return 0;}
 int mono_marshal_realloc_hglobal(void){return 0;}
 /* mono_network_init/cleanup are w32socket.c. The return-0 stub skipped XNetStartup. */
 /* int mono_network_cleanup(void){return 0;} */

@@ -24,10 +24,10 @@ DRIVER="$MINI/TestDriver.cs"
 # (other ABIs), aot-tests, bench. gc-test is last: a sgen abort reboots before the summary.
 TESTS="${*:-basic basic-long basic-float basic-math arrays objects exceptions builtin-types devirtualization generics gshared ratests basic-calls mixed gc-test}"
 
-# generics.cs needs System.Core.dll (Linq) + generics-variant-types.dll (variant interfaces the IL
+# generics.cs needs System.dll (SortedList), System.Core.dll (Linq) + generics-variant-types.dll (variant interfaces the IL
 # helper defines; we build the C# equivalent since the RXDK toolchain ships no ilasm).
 if echo "$TESTS" | grep -qw generics; then
-  [ -f "$OUT/System.Core.dll" ] || bash "$ROOT/scripts/build-syscore.sh" >/dev/null 2>&1
+  [ -f "$OUT/System.Core.dll" ] || { echo "ERROR: $OUT/System.Core.dll not found — run scripts/build-bcl.sh first"; exit 1; }
   VARSRC="$ROOT/build/managed/generics-variant-types.cs"
   VARDLL="$OUT/generics-variant-types.dll"
   MSYS2_ARG_CONV_EXCL='*' dotnet exec "$(cygpath -w "$CSC")" -nostdlib -noconfig -target:library \
@@ -47,6 +47,7 @@ for t in $TESTS; do
     echo "-out:$(cygpath -w "$OUT/mini-$t.dll")"
     echo "-reference:$(cygpath -w "$CORLIB")"
     if [ "$t" = generics ]; then
+      echo "-reference:$(cygpath -w "$OUT/System.dll")"
       echo "-reference:$(cygpath -w "$OUT/System.Core.dll")"
       echo "-reference:$(cygpath -w "$OUT/generics-variant-types.dll")"
     fi

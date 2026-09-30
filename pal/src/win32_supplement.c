@@ -202,7 +202,23 @@ void *NtCurrentProcess(void) { return (void *)(unsigned long)-1; }
  * so NT_TIB fields (stack bounds, exception list) are reachable. Verified on-device: fs[0x18]==0,
  * fs[0x1C] points to a region whose +4/+8 match the live StackBase/StackLimit. */
 void *NtCurrentTeb(void) { void *teb; __asm__ __volatile__("movl %%fs:0x1c, %0" : "=r"(teb)); return teb; }
-int  GetThreadContext(void *thread, void *ctx) { (void)thread;(void)ctx; return 0; }
+/* The kernel has no context API. Every Xbox thread runs in ring 0 on one CPU, so a thread other
+ * than the caller is switched out, and KTHREAD.KernelStack is the ESP it was switched out at. Its
+ * registers were pushed at or above that ESP (trap frame or swap frame), so a conservative scan
+ * from there to StackBase covers them. The other registers are reported as 0. Only valid for a
+ * thread that is not the caller. */
+int GetThreadContext(void *thread, void *ctx)
+{
+    CONTEXT *c = (CONTEXT *)ctx;
+    PKTHREAD kt;
+    unsigned long esp;
+    if (!NT_SUCCESS(ObReferenceObjectByHandle(thread, PsThreadObjectType, (PVOID *)&kt))) return 0;
+    esp = (unsigned long)kt->KernelStack;
+    ObfDereferenceObject(kt);
+    memset(&c->Edi, 0, sizeof(*c) - offsetof(CONTEXT, Edi));
+    c->Esp = esp;
+    return 1;
+}
 int  WSAWaitForMultipleEvents(unsigned long n, const void *ev, int all, unsigned long ms, int alertable)
 { (void)n;(void)ev;(void)all;(void)ms;(void)alertable; return (int)0xFFFFFFFF; /* WSA_WAIT_FAILED */ }
 
@@ -312,6 +328,12 @@ void zcfree(void *opaque, void *ptr) { (void)opaque; free(ptr); }
 void *mono_marshal_alloc_hglobal(size_t size) { return malloc(size ? size : 1); }
 void *mono_marshal_realloc_hglobal(void *ptr, size_t size) { return realloc(ptr, size ? size : 1); }
 void  mono_marshal_free_hglobal(void *ptr) { free(ptr); }
+
+/* CoTaskMemAlloc is COM, which the Xbox doesn't have. The marshaler allocates StringBuilder and
+ * string buffers here, so a NULL is OutOfMemoryException on those P/Invokes. */
+void *mono_marshal_alloc_co_task_mem(size_t size) { return malloc(size ? size : 1); }
+void *mono_marshal_realloc_co_task_mem(void *ptr, size_t size) { return realloc(ptr, size ? size : 1); }
+void  mono_marshal_free_co_task_mem(void *ptr) { free(ptr); }
 
 void *mono_file_map_open(const char *name)
 {
@@ -454,18 +476,30 @@ extern int Flush(void *stream);
 extern int ReadZStream(void *stream, unsigned char *buffer, int length);
 extern int WriteZStream(void *stream, unsigned char *buffer, int length);
 extern unsigned int rxdk_title_ipv4(void);
-
+extern int rxdk_GetAdaptersAddresses(unsigned int, unsigned int, void *, void *, int *);
+extern int rxdk_GetIfEntry(void *);
+extern unsigned int __attribute__((__stdcall__)) rxdk_GetBestInterfaceEx(const unsigned char *, int *);
 typedef void *(*RxdkDlLoad)(const char *name, int flags, char **err, void *ud);
 typedef void *(*RxdkDlSymbol)(void *handle, const char *name, char **err, void *ud);
 typedef void *(*RxdkDlClose)(void *handle, void *ud);
 extern void *mono_dl_fallback_register(RxdkDlLoad, RxdkDlSymbol, RxdkDlClose, void *);
 
+/* DllImport names are case-insensitive on Windows, and the class libraries spell them both ways
+ * ("kernel32.dll", "Kernel32"). */
+static int rxdk_dl_names(const char *name, const char *lib)
+{
+    size_t n = strlen(lib);
+    for (; *name; name++)
+        if (!_strnicmp(name, lib, n)) return 1;
+    return 0;
+}
 static void *rxdk_dl_load(const char *name, int flags, char **err, void *ud)
 {
     (void)flags; (void)err; (void)ud;
-    if (name && (strstr(name, "kernel32") || strstr(name, "advapi32") || strstr(name, "ntdll")
-                 || strstr(name, "api-ms-win-core-heap") || strstr(name, "BCrypt") || strstr(name, "bcrypt")
-                 || strstr(name, "MonoPosixHelper") || strstr(name, "xnet")))
+    if (name && (rxdk_dl_names(name, "kernel32") || rxdk_dl_names(name, "advapi32") || rxdk_dl_names(name, "ntdll")
+                 || rxdk_dl_names(name, "api-ms-win-core-heap") || rxdk_dl_names(name, "bcrypt")
+                 || rxdk_dl_names(name, "MonoPosixHelper") || rxdk_dl_names(name, "xnet")
+                 || rxdk_dl_names(name, "iphlpapi")))
         return (void *)(size_t)0x4B33D11; /* opaque non-NULL "module" handle */
     return NULL;
 }
@@ -520,6 +554,10 @@ static void *rxdk_dl_symbol(void *handle, const char *name, char **err, void *ud
     if (!strcmp(name, "ReadZStream"))           return (void *)&ReadZStream;
     if (!strcmp(name, "WriteZStream"))          return (void *)&WriteZStream;
     if (!strcmp(name, "rxdk_title_ipv4"))       return (void *)&rxdk_title_ipv4;
+    /* iphlpapi: System.Net.NetworkInformation, and through it Socket.OSSupportsIPv4 (xbox_net.c) */
+    if (!strcmp(name, "GetAdaptersAddresses"))  return (void *)&rxdk_GetAdaptersAddresses;
+    if (!strcmp(name, "GetIfEntry"))            return (void *)&rxdk_GetIfEntry;
+    if (!strcmp(name, "GetBestInterfaceEx"))    return (void *)&rxdk_GetBestInterfaceEx;
     /* advapi32: read-side registry (TimeZoneInfo enrichment) -> report "key absent" */
     if (!strcmp(name, "RegOpenKeyExW"))     return (void *)&rxdk_RegOpenKeyExW;
     if (!strcmp(name, "RegCloseKey"))       return (void *)&rxdk_RegCloseKey;

@@ -10,3 +10,7 @@
 	path = vendor/monogame-samples
 	url = https://github.com/Team-Resurgent/RXDK.MonoGame.Samples.git
 	branch = xbox
+[submodule "vendor/gum"]
+	path = vendor/gum
+	url = https://github.com/Team-Resurgent/Gum.git
+	branch = xbox
